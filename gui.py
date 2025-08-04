@@ -38,7 +38,8 @@ ffb = ForceFeedbackAlgorithm()
 # 首先添加导入
 from plt_ffb import (plot_torque_vs_speed, plot_torque_vs_angle, 
                      plot_lateral_effect_vs_speed, plot_friction_vs_steer_rate,
-                     plot_total_torque_vs_speed, plot_total_torque_vs_angle)
+                     plot_total_torque_vs_speed, plot_total_torque_vs_angle,
+                      plot_lateral_effect_vs_angular_vel)
 
 import os
 import json
@@ -124,11 +125,11 @@ class FFBPlotPage(QWidget):
 
         # 使用全局的 ffb 实例
         plot_torque_vs_speed(axes[0, 0], ffb)
-        plot_torque_vs_angle(axes[0, 1], ffb)
-        plot_lateral_effect_vs_speed(axes[0, 2], ffb)
-        plot_friction_vs_steer_rate(axes[1, 0], ffb)
-        plot_total_torque_vs_speed(axes[1, 1], ffb)
-        plot_total_torque_vs_angle(axes[1, 2], ffb)
+        plot_total_torque_vs_speed(axes[0, 1], ffb)
+        plot_friction_vs_steer_rate(axes[0, 2], ffb)
+        plot_torque_vs_angle(axes[1, 0], ffb)
+        plot_total_torque_vs_angle(axes[1, 1], ffb) #总矩Torque vs 角度注释
+        plot_lateral_effect_vs_angular_vel(axes[1, 2], ffb)  # 新增的图
 
         plt.tight_layout()
 
@@ -152,7 +153,7 @@ class CanMessagePage(QWidget):
         # self.filter_input.setPlaceholderText("Filter by CAN ID (e.g. 0x8E)")
         # self.filter_input.textChanged.connect(self.apply_filter)
 
-        self.text_edit = QTextEdit()
+        self.text_edit = QTextEdit()  
         self.text_edit.setReadOnly(True)
 
         # layout.addWidget(self.filter_input)
@@ -176,7 +177,17 @@ class CanMessagePage(QWidget):
 
     def refresh_display(self):
         """根据 filter_id 刷新显示"""
-        pass  # 后续由主窗口调用传入原始数据并处理过滤逻辑
+        # pass  # 后续由主窗口调用传入原始数据并处理过滤逻辑
+        parent_window = self.parent() #获取当前窗口的父窗口
+        if not parent_window:  # 确保父窗口存在
+            logger.error("Parent window not found") 
+            return
+        
+        self.text_edit.clear()
+        for message in parent_window.can_data:  # 假设传入了 parent_window
+            if self.filter_id is None or message.id == self.filter_id:
+                self.text_edit.append(str(message))
+
 
 class RealTimePlotWindow(QMainWindow):
     def __init__(self, config_ready_event,config=None):
@@ -340,6 +351,22 @@ class RealTimePlotWindow(QMainWindow):
     # gui.py - RealTimePlotWindow 类中添加：
     def set_zcanlib(self, zcanlib):
         self.zcanlib = zcanlib
+
+    #can数据读取线程
+    def start_can_reader(self):
+        def can_reader():
+            while self.is_connected:
+                if self.zcanlib and self.chn_handle:
+                    frame = self.zcanlib.ReadCAN(self.chn_handle)
+                    if frame:
+                        self.can_data.append(frame)
+                        self.can_message_page.append_message(str(frame))
+                time.sleep(0.01)  # 避免 CPU 占用过高
+
+        self.can_reader_thread = threading.Thread(target=can_reader, daemon=True)
+        self.can_reader_thread.start()
+
+    
     def reset_all_states(self):
     # """ 清除所有运行时状态 """
         # print("Stopping all threads...")
@@ -404,6 +431,12 @@ class RealTimePlotWindow(QMainWindow):
             run_main_flag_event.set()
             wifi_module.wifi_flag_event.set()
             # wifi_module.stop_flag_event.set()
+            if self.config['USE_WIFI']:
+                pass
+            else:
+                self.start_can_reader() #can数据读取线程
+        
+
         else:
             self.conn_status_label.setText("Communication: ⚪ Disconnected")
             self.toggle_conn_button.setText("🟢 Connect")

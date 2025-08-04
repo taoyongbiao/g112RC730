@@ -1,6 +1,6 @@
 {
     "USE_WIFI": false,
     "USE_REAL_CAN": false,
-    "USE_REAL_AC": true,
+    "USE_REAL_AC": false,
     "USE_RC": false
 }

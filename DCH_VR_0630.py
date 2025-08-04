@@ -1480,6 +1480,8 @@ def start_main_process(config,window=None):
     else:
         # 初始化 CAN
         zcanlib, chn_handle,handle = initialize_can(config, window)
+        if window is not None:
+            window.chn_handle = chn_handle  # 将 chn_handle 传递给 GUI
         sender_thread = threading.Thread(target=send_messages, args=(chn_handle, ac_api, zcanlib))
         receiver_thread = threading.Thread(target=receive_messages, args=(chn_handle, zcanlib))
         #线程状态

@@ -122,6 +122,43 @@ def plot_total_torque_vs_angle(ax, ffb):
     ax.legend()
     ax.grid(True)
 
+def plot_lateral_effect_vs_angular_vel(ax, ffb):
+    # 创建模拟的 acc_g 和 angular_vel 对象
+    class MockAccG:
+        def __init__(self, values):
+            self.accg = values
+            
+    class MockAngularVel:
+        def __init__(self, values):
+            self.VehAngVel = values
+
+    speeds = [20, 60, 120]  # 不同速度
+    wheel_slip = [0.0] * 4
+    
+    acc_g = MockAccG([0.0, 0.0, 0.0])
+    
+    # angular_vel 范围 (rad/s 转换为更直观的 deg/s)
+    angular_vel_range = np.linspace(-30, 30, 300)  # -30 到 30 deg/s
+    
+    for speed in speeds:
+        lateral_effects = []
+        for ang_vel in angular_vel_range:
+            angular_vel_obj = MockAngularVel([0.0, np.deg2rad(ang_vel), 0.0])  # 转换为 rad/s
+            effect = ffb.get_lateral_effect(
+                speed,
+                acc_g,
+                angular_vel_obj,
+                (wheel_slip[0], wheel_slip[1], wheel_slip[2], wheel_slip[3])
+            )
+            lateral_effects.append(effect)
+        ax.plot(angular_vel_range, lateral_effects, label=f"Speed = {speed} km/h")
+
+    ax.set_title("Lateral Effect vs Angular Velocity")
+    ax.set_xlabel("Angular Velocity (deg/s)")
+    ax.set_ylabel("Lateral Effect")
+    ax.legend()
+    ax.grid(True)
+
 if __name__ == "__main__":
     # 初始化算法类
     ffb = ForceFeedbackAlgorithm()
@@ -131,11 +168,11 @@ if __name__ == "__main__":
 
     # 绘制原有两个图
     plot_torque_vs_speed(axes[0, 0], ffb)
-    plot_torque_vs_angle(axes[0, 1], ffb)
-    plot_lateral_effect_vs_speed(axes[0, 2], ffb)
-    plot_friction_vs_steer_rate(axes[1, 0], ffb)
-    plot_total_torque_vs_speed(axes[1, 1], ffb)
-    plot_total_torque_vs_angle(axes[1, 2], ffb)
+    plot_total_torque_vs_speed(axes[0, 1], ffb)
+    plot_friction_vs_steer_rate(axes[0, 2], ffb)
+    plot_torque_vs_angle(axes[1, 0], ffb)
+    plot_total_torque_vs_angle(axes[1, 1], ffb) #总矩Torque vs 角度注释
+    plot_lateral_effect_vs_angular_vel(axes[1, 2], ffb)  # 新增的图
 
     # 自动调整布局并展示
     plt.tight_layout()
