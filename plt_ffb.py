@@ -1,17 +1,12 @@
+
 import numpy as np
 import matplotlib.pyplot as plt
-# from ffb_cal_0630 import ForceFeedbackAlgorithm
-from ffb_cal_0624 import ForceFeedbackAlgorithm
-import ctypes  # 修复：添加缺失的导入语句
+from ffb_cal_ori import ForceFeedbackAlgorithm
+import ctypes
 
-# 初始化算法类
-ffb = ForceFeedbackAlgorithm()
+# 移除全局变量 ffb 的定义
 
-# 设置绘图样式
-plt.style.use('ggplot')
-
-
-def plot_torque_vs_speed(ax):
+def plot_torque_vs_speed(ax, ffb):
     angles = [10, 60, 180, 450]
     speeds = np.linspace(0, 200, 300)
 
@@ -25,8 +20,7 @@ def plot_torque_vs_speed(ax):
     ax.legend()
     ax.grid(True)
 
-
-def plot_torque_vs_angle(ax):
+def plot_torque_vs_angle(ax, ffb):
     speeds = [20, 60, 120, 180]
     angles = np.linspace(-450, 450, 300)
 
@@ -40,20 +34,29 @@ def plot_torque_vs_angle(ax):
     ax.legend()
     ax.grid(True)
 
-
-def plot_lateral_effect_vs_speed(ax):
+def plot_lateral_effect_vs_speed(ax, ffb):
     steer_angles = [ctypes.c_float(45), ctypes.c_float(90), ctypes.c_float(180)]
     wheel_slip = [0.0] * 4
-    acc_g = [0.0] * 3
-    local_angular_vel = [0.0] * 3
+    
+    # 创建模拟的 acc_g 和 angular_vel 对象，匹配方法期望的格式
+    class MockAccG:
+        def __init__(self, values):
+            self.accg = values
+            
+    class MockAngularVel:
+        def __init__(self, values):
+            self.VehAngVel = values
+
+    acc_g = MockAccG([0.0, 0.0, 0.0])
+    local_angular_vel = MockAngularVel([0.0, 0.0, 0.0])
 
     speeds = np.linspace(0, 200, 300)
     for sa in steer_angles:
         lateral_effects = [
             ffb.get_lateral_effect(
                 speed,
-                (acc_g[0], acc_g[1], acc_g[2]),
-                (local_angular_vel[0], local_angular_vel[1], local_angular_vel[2]),
+                acc_g,
+                local_angular_vel,
                 (wheel_slip[0], wheel_slip[1], wheel_slip[2], wheel_slip[3])
             ) for speed in speeds
         ]
@@ -65,8 +68,7 @@ def plot_lateral_effect_vs_speed(ax):
     ax.legend()
     ax.grid(True)
 
-
-def plot_friction_vs_steer_rate(ax):
+def plot_friction_vs_steer_rate(ax, ffb):
     steer_angles = [ctypes.c_float(0), ctypes.c_float(90), ctypes.c_float(180)]
     steer_rates = np.linspace(0, 1080, 300)
 
@@ -81,7 +83,8 @@ def plot_friction_vs_steer_rate(ax):
     ax.set_ylabel("Friction")
     ax.legend()
     ax.grid(True)
-def plot_total_torque_vs_speed(ax):
+
+def plot_total_torque_vs_speed(ax, ffb):
     speeds = np.linspace(0, 200, 300)
     angles = [ctypes.c_float(45), ctypes.c_float(90), ctypes.c_float(180)]
 
@@ -100,8 +103,7 @@ def plot_total_torque_vs_speed(ax):
     ax.legend()
     ax.grid(True)
 
-
-def plot_total_torque_vs_angle(ax):
+def plot_total_torque_vs_angle(ax, ffb):
     angles = np.linspace(-450, 450, 300)
     speeds = [20, 60, 120, 180]
 
@@ -121,20 +123,19 @@ def plot_total_torque_vs_angle(ax):
     ax.grid(True)
 
 if __name__ == "__main__":
+    # 初始化算法类
+    ffb = ForceFeedbackAlgorithm()
+    
     # 创建 2 行 3 列 的画布，总共有 6 个子图
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
     # 绘制原有两个图
-    plot_torque_vs_speed(axes[0, 0])
-    plot_torque_vs_angle(axes[0, 1])
-
-    # 新增两个图
-    plot_lateral_effect_vs_speed(axes[0, 2])
-    plot_friction_vs_steer_rate(axes[1, 0])
-
-    # 新增 total_torque 图形
-    plot_total_torque_vs_speed(axes[1, 1])
-    plot_total_torque_vs_angle(axes[1, 2])
+    plot_torque_vs_speed(axes[0, 0], ffb)
+    plot_torque_vs_angle(axes[0, 1], ffb)
+    plot_lateral_effect_vs_speed(axes[0, 2], ffb)
+    plot_friction_vs_steer_rate(axes[1, 0], ffb)
+    plot_total_torque_vs_speed(axes[1, 1], ffb)
+    plot_total_torque_vs_angle(axes[1, 2], ffb)
 
     # 自动调整布局并展示
     plt.tight_layout()

@@ -2,8 +2,14 @@ import sys
 import numpy as np
 import matplotlib
 matplotlib.use('Qt5Agg')
-from PySide6.QtWidgets import QApplication,QGroupBox, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QHBoxLayout,QRadioButton, QButtonGroup
-from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import (QApplication,QGroupBox, QMainWindow, QPushButton, QVBoxLayout, QWidget, 
+                                QLabel, QHBoxLayout,QRadioButton, QButtonGroup,QTextEdit, QTabWidget,
+                                QMenuBar, QMenu, QFileDialog,QDialog)
+from PySide6.QtCore import QTimer, Qt  # 添加 Qt
+
+import matplotlib.pyplot as plt
+import ctypes 
+
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import threading  #
@@ -13,17 +19,202 @@ from DCH_VR_0630 import start_main_process,torque_data
 from shared_state import run_main_flag_event
 from loguru import logger
 
+import io
+import sys
+from contextlib import redirect_stdout
+
+# 在 gui.py 文件开头添加导入
+import os
+import json
+from pathlib import Path
+
+# 调用原 plt_ffb.py 中的绘图函数
+from ffb_cal_ori import ForceFeedbackAlgorithm
+
+ffb = ForceFeedbackAlgorithm()
+
+# 在 gui.py 中修改 FFBPlotPage 类
+
+# 首先添加导入
+from plt_ffb import (plot_torque_vs_speed, plot_torque_vs_angle, 
+                     plot_lateral_effect_vs_speed, plot_friction_vs_steer_rate,
+                     plot_total_torque_vs_speed, plot_total_torque_vs_angle)
+
+import os
+import json
+from pathlib import Path
 
 
+class LogPage(QDialog):
+    """日志显示弹窗"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("日志配置")
+        self.setGeometry(200, 200, 800, 600)
+        self.setModal(False)  # 设置为非模态窗口，允许与其他窗口交互
+        self.init_ui()
+        
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # 添加日志显示区域
+        self.log_text_edit = QTextEdit()
+        self.log_text_edit.setReadOnly(True)
+        
+        # 添加按钮布局
+        button_layout = QHBoxLayout()
+        
+        # 清除日志按钮
+        self.clear_log_button = QPushButton("清除日志")
+        self.clear_log_button.clicked.connect(self.clear_log)
+        
+        # 保存日志按钮
+        self.save_log_button = QPushButton("保存日志")
+        self.save_log_button.clicked.connect(self.save_log)
+        
+        # 关闭按钮
+        self.close_button = QPushButton("关闭")
+        self.close_button.clicked.connect(self.close)
+        
+        button_layout.addWidget(self.clear_log_button)
+        button_layout.addWidget(self.save_log_button)
+        button_layout.addWidget(self.close_button)
+        button_layout.addStretch()
+        
+        layout.addLayout(button_layout)
+        layout.addWidget(self.log_text_edit)
+        
+
+        
+    def append_log(self, message):
+        """添加日志信息"""
+        self.log_text_edit.append(message)
+        
+    def clear_log(self):
+        """清除日志"""
+        self.log_text_edit.clear()
+        
+    def save_log(self):
+        """保存日志到文件"""
+        filename, _ = QFileDialog.getSaveFileName(self, "Save Log", "", "Text Files (*.txt);;All Files (*)")
+        if filename:
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(self.log_text_edit.toPlainText())
+            except Exception as e:
+                # 可以添加错误提示
+                pass
+
+
+
+
+
+
+class FFBPlotPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+
+        # 创建 Matplotlib Figure
+        self.figure = plt.figure(figsize=(10, 8))
+        axes = self.figure.subplots(2, 3)
+
+        # 使用全局的 ffb 实例
+        plot_torque_vs_speed(axes[0, 0], ffb)
+        plot_torque_vs_angle(axes[0, 1], ffb)
+        plot_lateral_effect_vs_speed(axes[0, 2], ffb)
+        plot_friction_vs_steer_rate(axes[1, 0], ffb)
+        plot_total_torque_vs_speed(axes[1, 1], ffb)
+        plot_total_torque_vs_angle(axes[1, 2], ffb)
+
+        plt.tight_layout()
+
+        # 创建 Canvas 并加入布局
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+
+
+
+
+class CanMessagePage(QWidget):
+    "can信号页面"
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+        self.filter_id = None  # 当前筛选的 CAN ID
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        # self.filter_input = QLineEdit()
+        # self.filter_input.setPlaceholderText("Filter by CAN ID (e.g. 0x8E)")
+        # self.filter_input.textChanged.connect(self.apply_filter)
+
+        self.text_edit = QTextEdit()
+        self.text_edit.setReadOnly(True)
+
+        # layout.addWidget(self.filter_input)
+        layout.addWidget(self.text_edit)
+        self.setLayout(layout)
+
+    def apply_filter(self):
+        text = self.filter_input.text().strip()
+        if text:
+            try:
+                self.filter_id = int(text, 16)  # 支持输入 0x8E 形式
+            except ValueError:
+                self.filter_id = None
+        else:
+            self.filter_id = None
+        self.refresh_display()
+
+    def append_message(self, message: str):
+        self.text_edit.append(message)
+        self.refresh_display()  # 可选自动刷新
+
+    def refresh_display(self):
+        """根据 filter_id 刷新显示"""
+        pass  # 后续由主窗口调用传入原始数据并处理过滤逻辑
 
 class RealTimePlotWindow(QMainWindow):
     def __init__(self, config_ready_event,config=None):
         super().__init__()
-        self.config = config or {}
+        self.log_page = None  # 添加日志页面属性
+
+
+        # 获取项目根目录路径
+        self.project_dir = Path(__file__).parent
+        self.config_file = self.project_dir / "app_config.json"
+        
+        # 加载保存的设置
+        saved_config = self.load_config()
+        
+        # 从设置中读取上次保存的配置，如果没有则使用默认值
+        default_config = {
+            'USE_WIFI': False,
+            'USE_REAL_CAN': False,
+            'USE_REAL_AC': False,
+            'USE_RC': False,
+        }
+        
+        # 合并默认配置、保存的配置和传入的配置
+        self.config = {**default_config,  **(config or {}),**saved_config,}
+        
         self.USE_WIFI = self.config.get('USE_WIFI', False)
         self.USE_REAL_CAN = self.config.get('USE_REAL_CAN', False)
         self.USE_REAL_AC = self.config.get('USE_REAL_AC', False)
-        self.USE_RC = self.config.get('USE_RC', False)  # 初始化 USE_RC 属性
+        self.USE_RC = self.config.get('USE_RC', False)
+
+        self.is_plot_visible = True  # 用于判断是否需要刷新图表
+
+
+        # RealTimePlotWindow.__init__ 中添加：
+        self.can_data = []  # 存储所有接收到的 CAN 帧
+
+
+
 
         self.setWindowTitle("Real-time Torque Plot")
         self.setGeometry(100, 100, 1200, 800)
@@ -39,11 +230,13 @@ class RealTimePlotWindow(QMainWindow):
             'friction': [],
             'steering_angle': [],
             'steering_rate': [],
-            'rate_dir': []
+            'rate_dir': [],
+            'lateral_effect':[],
+            'suspension_effect':[]
         }
 
 
-        # self.thread_manager = WrappedThreadManager(self)  # 初始化线程管理器
+    
         self.ac_api = None
         self.zcanlib = None
         self.chn_handle = None
@@ -59,6 +252,9 @@ class RealTimePlotWindow(QMainWindow):
         # 初始化界面
         self._init_ui()
 
+        # 添加菜单栏
+        self._create_menu_bar()
+
         #主线程
         self.main_thread = None
         ...
@@ -66,6 +262,60 @@ class RealTimePlotWindow(QMainWindow):
         # 启动配置监听
         self.start_config_monitor()
 
+    def load_config(self):
+        """从项目目录加载配置"""
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                return {}
+        except Exception as e:
+            logger.error(f"加载配置文件失败: {e}")
+            return {}
+
+    def save_config(self):
+        """保存配置到项目目录"""
+        try:
+            # 确保配置目录存在
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"保存配置文件失败: {e}")
+
+    def _create_menu_bar(self):
+        """创建菜单栏"""
+        menubar = self.menuBar()
+        
+        # 创建"视图"菜单
+        view_menu = menubar.addMenu('设置')
+        
+        # 添加"日志"动作
+        log_action = view_menu.addAction('日志配置')
+        log_action.triggered.connect(self.show_log_page)
+        
+    def show_log_page(self):
+        """显示日志页面"""
+        if self.log_page is None:
+            self.log_page = LogPage(self)# 传入 parent 以保持窗口层级关系
+            # self.tabs.addTab(self.log_page, "Log")
+            
+            # 捕获 logger 的输出
+            def log_sink(message):
+                if self.log_page and hasattr(self.log_page, 'log_text_edit'):
+                    # 格式化日志消息
+                    formatted_message = f"{message.time:YYYY-MM-DD HH:mm:ss} | {message.level.name: <8} | {message.message}"
+                    self.log_page.append_log(formatted_message)
+                    
+            # 添加日志处理器
+            logger.add(log_sink, level="INFO", format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}")
+        
+        # 显示日志窗口
+        self.log_page.show()
+        self.log_page.raise_()  # 将窗口提到最前
+        self.log_page.activateWindow()  # 激活窗口
     def start_config_monitor(self):
         self.config_timer = QTimer(self)
         self.config_timer.timeout.connect(self.check_config_and_start)
@@ -147,6 +397,9 @@ class RealTimePlotWindow(QMainWindow):
             self.config['USE_REAL_CAN'] = self.can_on_radio.isChecked()
             self.config['USE_REAL_AC'] = self.ac_on_radio.isChecked()
             self.config['USE_RC'] = self.rc_on_radio.isChecked()  # 更新 USE_RC 配置
+
+            # 保存配置到本地文件
+            self.save_config()
             self.config_ready_event.set()  # 触发开始信号
             run_main_flag_event.set()
             wifi_module.wifi_flag_event.set()
@@ -278,21 +531,38 @@ class RealTimePlotWindow(QMainWindow):
         control_layout.addWidget(self.toggle_conn_button)  # 替换原来的 confirm_button
 
         control_layout.addStretch()
-        layout.addLayout(control_layout)
+        layout.addLayout(control_layout)  #将control_layout添加到layout中
+
+
+        # ====== 图表区域和 CAN 报文区域使用 Tab 控件 ======
+        self.tabs = QTabWidget()
+
+
+
+
 
 
 
         #======图表显示区域======
+        plot_widget = QWidget()
+        plot_layout = QVBoxLayout(plot_widget)
+
+
+
+
         self.figure = Figure()
         self.ax1 = self.figure.add_subplot(211)
         self.ax2 = self.figure.add_subplot(212)
         self.canvas = FigureCanvas(self.figure)
-        layout.addWidget(self.canvas)
+        # layout.addWidget(self.canvas)#将绘图添加到窗口布局中
+        plot_layout.addWidget(self.canvas)
+
+        self.tabs.addTab(plot_widget, "Torque Plot")#将绘图区域添加进标签页
 
 
 
         # self.canvas.mpl_connect('button_press_event', self.onclick)
-
+        # 定时器，定时刷新数据
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.timer.start(500)
@@ -303,16 +573,40 @@ class RealTimePlotWindow(QMainWindow):
         self.ax1.legend()
         self.ax1.grid(True)
 
-        bar_labels = ['Desired', 'Damping', 'Friction', 'Steer Angle', 'Steer Rate', 'Rate Dir']
+        bar_labels = ['Desired', 'Damping', 'Friction',  'Lateral','suspension','Steer Angle', 'Steer Rate', 'Rate Dir']
         self.bars = self.ax2.bar(bar_labels, [0]*len(bar_labels), color=[
-            'blue', 'green', 'orange', 'purple', 'red', 'brown'
+            'blue', 'green', 'orange', 'purple', 'red', 'brown', 'cyan','yellow'
         ])
         self.text_objects = [self.ax2.text(0, 0, "", ha='center', va='bottom') for _ in self.bars]
 
+
+        # CAN 报文页
+        self.can_message_page = CanMessagePage()
+        self.tabs.addTab(self.can_message_page, "CAN Messages")#将CAN报文页添加到标签页
+
+        # 添加 Tab 控件到主布局
+        layout.addWidget(self.tabs)
+
+
+        # FFB 分析图表页
+        ffb_plot_page = FFBPlotPage()
+        self.tabs.addTab(ffb_plot_page, "FFB Analysis")
+        self.tabs.currentChanged.connect(self.on_tab_changed)  # 监听 Tab 切换
+
+
+
+    # 切换标签页时触发 判断是不是绘图页
+    def on_tab_changed(self, index):
+        current_tab = self.tabs.tabText(index)
+        self.is_plot_visible = (current_tab == "Torque Plot")
     def on_confirm(self):
         self.config['USE_WIFI'] = self.wifi_on_radio.isChecked()
         self.config['USE_REAL_CAN'] = self.can_on_radio.isChecked()
         self.config['USE_REAL_AC'] = self.ac_on_radio.isChecked()
+        self.config['USE_RC ']= self.rc_on_radio.isChecked()
+
+        # 保存配置到本地文件
+        self.save_config()
         #print("Configuration confirmed.")
         logger.info("Configuration confirmed.")
         self.config_ready_event.set()
@@ -335,6 +629,10 @@ class RealTimePlotWindow(QMainWindow):
     #         self.ac_label.setText(f"USE_REAL_AC: {'ON' if self.USE_REAL_AC else 'OFF'}")
 
     def update_plot(self):
+        if not getattr(self, 'is_plot_visible', True):
+            return  # 非当前 Tab 不刷新
+
+
         t = self.torque_data['time']
         total = self.torque_data['total_torque']
         scale = self.torque_data['scale_torque']
@@ -347,7 +645,7 @@ class RealTimePlotWindow(QMainWindow):
             current_max = max(max(total), max(scale)) + 100 if len(total) > 0 else 2000
             self.ax1.set_ylim(current_min, current_max)
 
-        keys = ['desired_torque', 'damping', 'friction', 'steering_angle', 'steering_rate', 'rate_dir']
+        keys = ['desired_torque', 'damping', 'friction',  'lateral_effect','suspension_effect','steering_angle', 'steering_rate', 'rate_dir']
         values = [np.mean(self.torque_data[key]) if self.torque_data[key] else 0 for key in keys]
         max_val = max(values) if values else 1
         offset = max(0.02 * max_val, 20)

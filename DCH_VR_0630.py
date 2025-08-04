@@ -6,9 +6,9 @@ import threading
 import pyvjoy
 import os
 import math
-# from ffb_cal_0624 import ForceFeedbackAlgorithm
+from ffb_cal_ori import ForceFeedbackAlgorithm
 # from ffb_cal_0630 import ForceFeedbackAlgorithm
-from ffb_cal_0624 import ForceFeedbackAlgorithm
+# from ffb_cal_0624 import ForceFeedbackAlgorithm
 # from ffb_rc import get_ffb_from_game_api,get_ffb_from_algorithm
 
 from ffb_rc import FrameData,FrameInputData,read_vehicle_status_from_rc
@@ -28,10 +28,15 @@ from loguru import logger
 import ffb_rc
 fRead = None
 fEnd = None
-RC = True
+RC = False
 ac_api=None
 
 fWriteInput = None
+
+
+
+
+
 
 
 from shared_state import run_main_flag_event
@@ -79,7 +84,9 @@ torque_data = {
     # 'steering_angle_old': [],
     'steering_angle': [],
     'steering_rate': [],
-    'rate_dir': []
+    'rate_dir': [],
+    'lateral_effect':[],
+    'suspension_effect':[],
 }
 
 
@@ -116,7 +123,8 @@ G_BRAKE = 0.0
  CAN ID
 '''
 G_STEERING_CAN_ID = 0X11F
-G_STEERING_SBW_CAN_ID = 0X8E
+# G_STEERING_SBW_CAN_ID = 0X8E
+G_STEERING_SBW_CAN_ID = 0X11F
 G_THROTTLE_BRAKE_CAN_ID = 0x342
 
 INVALID_DEVICE_HANDLE = 0
@@ -592,11 +600,47 @@ def encode_sbw_ready_frame():
 
     return data_frame
 
-#将输入的扭矩值编码为一个具有校验、计数和固定格式的64字节数据帧，
-def encode_sbw_ffb_frame(torque):
+# #将输入的扭矩值编码为一个具有校验、计数和固定格式的64字节数据帧，
+# def encode_sbw_ffb_frame(torque):
+#     global G_ROLL_CNT
+
+#     data_frame = bytearray(64)
+
+#     torque = int((torque + 20) * 50)
+
+#     torque_bin = format(torque, '013b')
+
+#     data_frame[0] = 0x20
+#     data_frame[1] = 0x1C
+#     data_frame[2] = 0x01
+#     data_frame[3] = int(torque_bin[-4:], 2) << 4
+#     data_frame[4] = int(torque_bin[1:-4], 2)
+
+#     data_frame[5] = 0x4A
+#     data_frame[6] = 0x40  #high 0000 1001 0x09#low 0000 0101 0x05
+
+#     G_ROLL_CNT = (G_ROLL_CNT + 1) % 0xFFFF
+
+#     data_frame[60] = G_ROLL_CNT & 0xFF
+#     data_frame[61] = (G_ROLL_CNT >> 8) & 0xFF
+
+#     crc_data = crc16(data_frame[:-2])
+
+#     data_frame[62] = crc_data & 0xFF
+#     data_frame[63] = (crc_data >> 8) & 0xFF
+
+#     return data_frame
+
+
+
+def encode_sbw_ffb_frame(torque=None):
     global G_ROLL_CNT
 
     data_frame = bytearray(64)
+
+    # 如果没有提供扭矩值，则设置为0
+    if torque is None:
+        torque = 0
 
     torque = int((torque + 20) * 50)
 
@@ -604,7 +648,11 @@ def encode_sbw_ffb_frame(torque):
 
     data_frame[0] = 0x20
     data_frame[1] = 0x1C
-    data_frame[2] = 0x01
+    # 根据扭矩值设置data_frame[2]
+    if torque == 0:
+        data_frame[2] = 0x00
+    else:
+        data_frame[2] = 0x01
     data_frame[3] = int(torque_bin[-4:], 2) << 4
     data_frame[4] = int(torque_bin[1:-4], 2)
 
@@ -806,15 +854,15 @@ def can_start(zcanlib, device_handle, chn):
     ret = zcanlib.SetValue(ip, str(chn) + "/clock", "60000000")
     if ret != ZCAN_STATUS_OK:
         #print("Set CH%d CANFD clock failed!" % (chn))
-        logger.erro("Set CH%d CANFD clock failed!" % (chn))
+        logger.error("Set CH%d CANFD clock failed!" % (chn))
     ret = zcanlib.SetValue(ip, str(chn) + "/canfd_standard", "0")
     if ret != ZCAN_STATUS_OK:
         #print("Set CH%d CANFD standard failed!" % (chn))
-        logger.erro("Set CH%d CANFD standard failed!" % (chn))
+        logger.error("Set CH%d CANFD standard failed!" % (chn))
     ret = zcanlib.SetValue(ip, str(chn) + "/initenal_resistance", "1")
     if ret != ZCAN_STATUS_OK:
         #print("Open CH%d resistance failed!" % (chn))
-        logger.erro("Open CH%d resistance failed!" % (chn))
+        logger.error("Open CH%d resistance failed!" % (chn))
     zcanlib.ReleaseIProperty(ip)
 
     chn_init_cfg = ZCAN_CHANNEL_INIT_CONFIG()
@@ -829,7 +877,7 @@ def can_start(zcanlib, device_handle, chn):
     return chn_handle
 
 #记录扭矩数据
-def record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque):
+def record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque,lateral_effect,suspension_effect):
     current_time = time.time() - start_time
     torque_data['time'].append(current_time)
     torque_data['desired_torque'].append(-desired_torque)
@@ -837,6 +885,17 @@ def record_torque_data(start_time, desired_torque, damping, friction, total_torq
     torque_data['friction'].append(-friction)
     torque_data['total_torque'].append(-total_torque)
     torque_data['scale_torque'].append(scale_torque)
+
+     # 添加lateral_effect记录（如果还不存在）
+    if 'lateral_effect' not in torque_data:
+        torque_data['lateral_effect'] = []
+    torque_data['lateral_effect'].append(lateral_effect)
+
+         # 添加suspension_effect记录（如果还不存在）
+    if 'suspension_effect' not in torque_data:
+        torque_data['suspension_effect'] = []
+    torque_data['suspension_effect'].append(suspension_effect)
+
 
     # 控制最大数据量
     if len(torque_data['time']) > MAX_DATA_POINTS:
@@ -864,15 +923,34 @@ def send_messages(chn_handle, ac_api, zcanlib):
     canfd_msgs = (ZCAN_TransmitFD_Data * transmit_canfd_num)()
 
     can_ids = [0x0C3, 0x0C3, 0x0C3, 0x29F, 0x29F, 0x29F, 0x341]
+    # can_ids = [0x0C3, 0x0C3, 0x0C3, 0x4EF, 0x4EF, 0x4EF, 0x341] #最新
     # can_ids = [0x0C3, 0x0C3, 0x0C3, 0x29F, 0x29F, 0x29F]
 
     for i, can_id in enumerate(can_ids):
-        msg = canfd_msgs[i]
+        # 遍历 canfd_msgs 数组，初始化每个 CAN FD 消息的属性
+        msg = canfd_msgs[i]  # 获取当前 CAN FD 消息对象
+
+        # 设置消息的发送类型为正常发送（1 表示正常发送，0 表示保留或其他用途）
         msg.transmit_type = 1
+
+        # 设置帧格式标志：
+        # 0 表示标准帧（11位CAN ID），1 表示扩展帧（29位CAN ID）
         msg.frame.eff = 0
+
+        # 设置远程帧标志：
+        # 0 表示数据帧，1 表示请求帧（Remote Transmission Request）
         msg.frame.rtr = 0
+
+        # 设置比特率切换标志：
+        # 0 表示不切换比特率，1 表示使用更高的数据段比特率（CAN FD 特性）
         msg.frame.brs = 0
+
+        # 设置数据长度码（DLC）：
+        # 表示数据段长度为 8 字节（CAN FD 支持最大 64 字节）
         msg.frame.len = 8
+
+        # 设置 CAN 帧 ID：
+        # 从 can_ids 列表中取出当前索引的 CAN ID，标识该帧的用途或来源
         msg.frame.can_id = can_id
 
     start_time = time.time()  # 记录开始时间
@@ -949,7 +1027,9 @@ def send_messages(chn_handle, ac_api, zcanlib):
             if RC:
                 roll, pitch, speed= read_vehicle_status_from_rc()
             else:
-                roll, pitch, speed, wheel_slip, acc_g, suspension_travel, local_angular_vel = read_vehicle_status(ac_api)    
+                roll, pitch, speed, wheel_slip, acc_g, suspension_travel, local_angular_vel = read_vehicle_status(ac_api)   
+
+            # print(f"++++++++++++++++++++ acc_g: {acc_g.accg[1]}")
 
             # 编码滚转和俯仰数据帧
             roll_pitch_frame_data, roll_raw_real, roll_add_real, pitch_real = encode_roll_pitch_frame('U9', G_THROTTLE,
@@ -958,16 +1038,24 @@ def send_messages(chn_handle, ac_api, zcanlib):
                                                             G_STEERING_WHEEL_ANGLE,
                                                             G_STEERING_WHEEL_ANGLE_OLD,
                                                             G_STEERING_RATE)
+            # 将编码好的车身姿态数据（roll和pitch）填充到前3个CAN FD消息的数据域中
             for i in range(len(roll_pitch_frame_data)):
-                for msg in canfd_msgs[:3]:
-                    msg.frame.data[i] = roll_pitch_frame_data[i]
+                for msg in canfd_msgs[:3]:  # 遍历前三个消息对象
+                    msg.frame.data[i] = roll_pitch_frame_data[i]  # 填充数据到每个消息帧的对应位置
 
+            # 计数器 cnt 自增1，用于控制某些操作的频率
             cnt += 1
+
+            # 每当 cnt 达到5时，执行一次特定操作（发送VR模式切换帧）
             if cnt == 5:
-                cnt = 0
+                cnt = 0  # 重置计数器
+                
+                # 调用 encode_switch_vr_frame 函数生成一个VR模式切换帧，参数0x2表示某种特定状态
                 switch_vr_frame_data = encode_switch_vr_frame(0x2)
+                
+                # 将VR模式切换帧的数据填充到第4至第6个CAN FD消息的数据域中
                 for i in range(len(switch_vr_frame_data)):
-                    for msg in canfd_msgs[3:-1]:
+                    for msg in canfd_msgs[3:-1]:  # 遍历第4到第6个消息对象（索引3到-1前一个）
                         msg.frame.data[i] = switch_vr_frame_data[i]
 
             ready_frame = encode_sbw_ready_frame()
@@ -981,52 +1069,16 @@ def send_messages(chn_handle, ac_api, zcanlib):
 
 
 
-            
-
-            # print("pitch_roll_ready_ret",roll_pitch_steer_ready_ret)
-
-            # desired_torque = ffb.desired_torque * 1.5
-
-
-
-
-            # if math.isnan(desired_torque):
-            #     desired_torque = 0.0
-
-
-
-            # friction = ffb.friction / 3
-
-            # damping = ffb.damping * 5
-
-
-            # tire_effect = ffb.tire_effect / 3
-
-            # lateral_effect = ffb.lateral_effect / 3
-
-            # road_effect = ffb.road_effect  # 随车速变化 车速越大越难打
 
             # total_torque =(desired_torque+ friction + damping + tire_effect + lateral_effect + road_effect)*-1
 
-            # total_torque = desired_torque + damping
-                
 
-            # tire_effect = ffb.tire_effect / 3
 
             # lateral_effect = ffb.get_lateral_effect(speed,acc_g,ctypes.c_float(G_STEERING_WHEEL_ANGLE), ctypes.c_float(G_STEERING_RATE/1080.0),wheel_slip)
 
-            # 0630函数异常影响力矩输出
-            # lateral_effect = ffb.get_lateral_effect(speed, acc_g, local_angular_vel, wheel_slip)
 
-            #lateral_effect = ffb.get_lateral_effect(speed, acc_g, local_angular_vel, suspension_travel)
-            # lateral_effect = ffb.get_lateral_effect(
-            #     speed,
-            #     acc_g,  # 提取数组部分
-            #     local_angular_vel,
-            #     wheel_slip.slip
-            # )
 
-            # road_effect = ffb.road_effect  # 随车速变化 车速越大越难打
+
 
             #从新函数得到数据
             ffb=ForceFeedbackAlgorithm()
@@ -1034,14 +1086,22 @@ def send_messages(chn_handle, ac_api, zcanlib):
             desired_torque=ffb.get_tanh_torque(speed,G_STEERING_WHEEL_ANGLE)
             # desired_torque = ffb.get_tanh_torque(speed, local_angular_vel.VehAngVel[2])
 
+            # 0630函数异常影响力矩输出
+
+            lateral_effect = ffb.get_lateral_effect(
+                speed,
+                acc_g,  # 提取数组部分
+                local_angular_vel,
+                wheel_slip.slip
+            )
+            suspension_effect=ffb.get_suspension_effect(speed, suspension_travel)
+
             # friction, damping = ffb.get_friction(ctypes.c_float(G_STEERING_WHEEL_ANGLE), ctypes.c_float(G_STEERING_RATE), speed)
             friction, damping = ffb.get_friction(ctypes.c_float(G_STEERING_WHEEL_ANGLE),
                                                  ctypes.c_float(G_STEERING_RATE))
-            total_torque = desired_torque - damping - friction
-            # print("侧滑",lateral_effect)
+            total_torque = desired_torque - damping - friction+lateral_effect+suspension_effect
 
-            #print("desired_torque", desired_torque, "damping", damping, "friction", friction,"total",total_torque)
-            logger.info("desired_torque", desired_torque, "damping", damping, "friction", friction,"total",total_torque)
+            logger.info(f"desired_torque: {desired_torque:.2f}, damping: {damping:.2f}, friction: {friction:.2f}, total: {total_torque:.2f}")
 
             scale_torque = total_torque * 0.001 * 0.05 * -1  # 54330.05重 #另一台u9是0.06
     
@@ -1070,13 +1130,13 @@ def send_messages(chn_handle, ac_api, zcanlib):
             
             
             
-            record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque)
+            record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque,lateral_effect,suspension_effect)
             print(f"desired: {desired_torque:.2f}, damping: {damping:.2f}, friction: {friction:.2f}, "
                   f"total: {total_torque:.2f}, scale: {scale_torque:.6f}")
 
 
             #print("scale_torque", scale_torque)
-            logger.info("scale_torque", scale_torque)
+            logger.info(f"scale_torque: {scale_torque:.6f}")
 
             ffb_frame_data = encode_sbw_ffb_frame(scale_torque)
 
@@ -1099,6 +1159,7 @@ def send_messages(chn_handle, ac_api, zcanlib):
 
             # frame.can_id: 设置 CAN 帧 ID 为 0x57（十进制 87），用于标识方向盘力反馈数据
             steer_canfd_msgs.frame.can_id = 0x57
+            # steer_canfd_msgs.frame.can_id = 0x0C3
 
             for i in range(len(ffb_frame_data)):
                 steer_canfd_msgs.frame.data[i] = ffb_frame_data[i]
@@ -1198,6 +1259,7 @@ def receive_messages(chn_handle, zcanlib):
                         else:
                             pyvjoy.VJoyDevice(1).set_axis(pyvjoy.HID_USAGE_Z,
                                         int((G_STEERING_WHEEL_ANGLE + 720) / 1440 * 32767))
+                            logger.debug(f"steering_angle: {steering_angle}")
 
                     if can_id == G_THROTTLE_BRAKE_CAN_ID:
                         throttle, brake = decode_throttle_brake_frame(data)
@@ -1297,13 +1359,14 @@ def initialize_can(config, window=None):
     return zcanlib, chn_handle,handle
 
 def start_main_process(config,window=None):
-    global main_thread_list,fRead,fWriteInput,fEnd,ac_api
+    global main_thread_list,fRead,fWriteInput,fEnd,ac_api,RC
 
     # 清空旧线程列表
     main_thread_list.clear()
 
     if config['USE_REAL_AC']:
-        if RC:
+
+        if config['USE_RC']:
            # 初始化 DLL 接口
             # if not ffb_rc.init_game_api():
             #     exit(1) 
@@ -1312,10 +1375,12 @@ def start_main_process(config,window=None):
             fRead = ffb_rc.get_fRead()
             fEnd = ffb_rc.get_fEnd()
             fWriteInput=ffb_rc.get_fWriteInput()
+            RC = True
         else :
+            RC= False
             # dll_path = "C:/Users/tao.yongbiao/Desktop/新建文件夹/g112RC/3_ac_api.dll"
             #
-            ac_api = windll.LoadLibrary(os.path.join(os.path.dirname(__file__), "3_ac_api.dll"))
+            ac_api = windll.LoadLibrary(os.path.join(os.path.dirname(__file__), "4_ac_api.dll"))
             # ac_api = ctypes.WinDLL(dll_path)
 
             ac_api.AC_GetRoll.restype = ctypes.c_float
@@ -1333,6 +1398,11 @@ def start_main_process(config,window=None):
 
             class AccG(ctypes.Structure):
                 _fields_ = [("accg", ctypes.c_float * 3)]
+
+            # class AccG(ctypes.Structure):
+            #     _fields_ = [("x", ctypes.c_float),
+            #                 ("y", ctypes.c_float),
+            #                 ("z", ctypes.c_float)]
             ac_api.AC_GetAccG.restype = AccG
 
             class SuspensionTravel(ctypes.Structure):

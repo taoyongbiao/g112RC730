@@ -1,4 +1,4 @@
-# wifi_module.py
+
 
 import struct
 import socket
@@ -62,7 +62,7 @@ CONNECT_EVENT = threading.Event()   # 是否建立连接标志
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-G_DEST_IP = '192.168.246.186'    #中间件IP地址
+G_DEST_IP = '192.168.77.185'    #中间件IP地址
 G_HEARTBEAT_TIMEOUT = 5
 DEST_PORT = 8888                # 中间件接收端口
 
@@ -158,8 +158,8 @@ def wifi_send_messages(ac_api):
             steering_wheel_rate = G_STEERING_RATE
             steering_wheel_angle_old = G_STEERING_WHEEL_ANGLE_OLD
             # 计算附加项
-            roll_add = turning_response(steering_wheel_angle, steering_wheel_angle_old, steering_wheel_rate, speed)
-            pitch_add = throttle_brake_response(G_THROTTLE, G_BRAKE, speed)
+            roll_add = turning_response('U9',steering_wheel_angle, steering_wheel_angle_old, steering_wheel_rate, speed)
+            pitch_add = throttle_brake_response('U9',G_THROTTLE, G_BRAKE, speed)
 
             # 总量 = 原始 + 附加
             roll_total_game = roll_add + roll
@@ -178,12 +178,19 @@ def wifi_send_messages(ac_api):
             ffb = ForceFeedbackAlgorithm()
             desired_torque = ffb.get_tanh_torque(speed, G_STEERING_WHEEL_ANGLE)
             friction, damping = ffb.get_friction(ctypes.c_float(G_STEERING_WHEEL_ANGLE), ctypes.c_float(G_STEERING_RATE))
+            lateral_effect = ffb.get_lateral_effect(
+                speed,
+                acc_g,  # 提取数组部分
+                local_angular_vel,
+                wheel_slip.slip
+            )
+            suspension_effect=ffb.get_suspension_effect(speed, suspension_travel)
             total_torque = desired_torque - damping - friction
             scale_torque = total_torque * 0.001 * 0.05 * -1  # 调整比例
 
             # 记录数据
             start_time = time.time()  # 记录开始时间
-            record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque)
+            record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque,lateral_effect,suspension_effect)
 
             
             torque_data=int((scale_torque + 20) * 50)
@@ -207,10 +214,12 @@ def wifi_send_messages(ac_api):
             sock.sendto(shock_pkt, (G_DEST_IP, DEST_PORT))
             #print("send shock!")
             logger.info("send shock!")
+            time.sleep(0.1)
         except Exception as e:
             #print(f"Read failed: {e}")
             logger.info(f"Read failed: {e}")
-            return
+            # return
+            continue
 
 def wifi_send_heartbeat_messages():
     global DEST_PORT, sock
@@ -325,6 +334,8 @@ def wifi_receive_messages():
                     try:
                         throttle_depth = struct.unpack('>B', payload_data[0:1])[0]
                         brake_depth = struct.unpack('>B', payload_data[1:2])[0]
+                        #test
+                        brake_depth=0
                         steering_angle = struct.unpack('>H', payload_data[2:4])[0]
                         steering_rotation = struct.unpack('>B', payload_data[4:5])[0]
                         #print(f"Throttle Depth: {throttle_depth}")
@@ -343,6 +354,7 @@ def wifi_receive_messages():
                             logger.debug("rc_inputdata.steer:", rc_inputdata.steer)    
                             rc_inputdata.throttle = throttle_depth/ 100
                             rc_inputdata.brake = brake_depth/ 100
+
                             #print("rc_inputdata.throttle: ", rc_inputdata.throttle)
                             logger.debug("rc_inputdata.throttle: ", rc_inputdata.throttle)
                             #print("rc_inputdata.brake: ", rc_inputdata.brake)
@@ -376,7 +388,7 @@ def wifi_receive_messages():
                     #print(f"  [ACTION] 解包：1字节 flag + 4字节 IP: {funFlag, ip_str}")
                     logger.debug(f"  [ACTION] 解包：1字节 flag + 4字节 IP: {funFlag, ip_str}")
                     global G_DEST_IP
-                    G_DEST_IP = ip_str  #  更新全局目标IP地址 
+                    G_DEST_IP = ip_str  #  更新全局目标IP地址 G_D
                 # print(f"[ACTION] last_time: {G_LAST_TIME}")
                     
                 CONNECT_EVENT.set()

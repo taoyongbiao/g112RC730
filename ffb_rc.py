@@ -103,7 +103,7 @@ def init_game_api():
             g112RC_api =windll.LoadLibrary(os.path.join(os.path.dirname(__file__), "RacingRemoteController(1).dll"))
         except Exception as e:
             #print(f"g112RC_api:{e}\n")
-            logger.erro(f"g112RC_api:{e}\n")
+            logger.error(f"g112RC_api:{e}\n")
 
         fRead = RCReadFrameData(g112RC_api.RCReadFrameData)
         fWriteInput = RCSetInputData(g112RC_api.RCSetInputData)
@@ -112,7 +112,7 @@ def init_game_api():
         fInit(False)
     except Exception as e:
         #print(f"Failed to load RC DLL: {e}")
-        logger.erro(f"Failed to load RC DLL: {e}")
+        logger.error(f"Failed to load RC DLL: {e}")
         exit(0)
 
 
@@ -156,15 +156,16 @@ def read_vehicle_status_from_rc():
         fRead(byref(rc_date))
     except Exception as e:
         #print(f"[ERROR] Failed to read frame data from RC: {e}")
-        logger.erro(f"[ERROR] Failed to read frame data from RC: {e}")
+        logger.error(f"[ERROR] Failed to read frame data from RC: {e}")
         return None, None, 0.0, None, None, None, None
 
     if rc_date.running == 0:
         #print("No data available from RC")
-        logger.erro("No data available from RC")
+        logger.error("No data available from RC")
         return None, None, 0.0, None, None, None, None
     #print(f"============speed:{rc_date.speed}\n")
     logger.debug(f"============speed:{rc_date.speed}\n")
+    rc_date.speed=120
 
     return (
         rc_date.roll,
