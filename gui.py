@@ -5,7 +5,7 @@ matplotlib.use('Qt5Agg')
 from PySide6.QtWidgets import (QApplication,QGroupBox, QMainWindow, QPushButton, QVBoxLayout, QWidget, 
                                 QLabel, QHBoxLayout,QRadioButton, QButtonGroup,QTextEdit, QTabWidget,
                                 QMenuBar, QMenu, QFileDialog,QDialog)
-from PySide6.QtCore import QTimer, Qt  # 添加 Qt
+from PySide6.QtCore import QTimer, Qt,Signal, QObject  # 添加 Qt
 
 import matplotlib.pyplot as plt
 import ctypes 
@@ -142,10 +142,14 @@ class FFBPlotPage(QWidget):
 
 class CanMessagePage(QWidget):
     "can信号页面"
+    # 添加信号用于线程安全的消息更新
+    message_received = Signal(str)
     def __init__(self):
         super().__init__()
         self.init_ui()
         self.filter_id = None  # 当前筛选的 CAN ID
+        # 连接信号到槽函数
+        self.message_received.connect(self._append_message_thread_safe)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -159,7 +163,10 @@ class CanMessagePage(QWidget):
         # layout.addWidget(self.filter_input)
         layout.addWidget(self.text_edit)
         self.setLayout(layout)
-
+    def _append_message_thread_safe(self, message: str):
+        """在GUI线程中实际添加消息"""
+        self.text_edit.append(message)
+        self.refresh_display()  # 可选自动刷新
     def apply_filter(self):
         text = self.filter_input.text().strip()
         if text:
@@ -172,8 +179,8 @@ class CanMessagePage(QWidget):
         self.refresh_display()
 
     def append_message(self, message: str):
-        self.text_edit.append(message)
-        self.refresh_display()  # 可选自动刷新
+        """线程安全地添加消息"""
+        self.message_received.emit(message)
 
     def refresh_display(self):
         """根据 filter_id 刷新显示"""
@@ -357,10 +364,22 @@ class RealTimePlotWindow(QMainWindow):
         def can_reader():
             while self.is_connected:
                 if self.zcanlib and self.chn_handle:
-                    frame = self.zcanlib.ReadCAN(self.chn_handle)
-                    if frame:
-                        self.can_data.append(frame)
-                        self.can_message_page.append_message(str(frame))
+                    try:
+                        # 统一使用 ReceiveFD 方法处理CAN数据
+                        if hasattr(self.zcanlib, 'ReceiveFD') and hasattr(self.zcanlib, 'GetReceiveNum'):
+                            # 获取可用帧数量
+                            rcv_num = self.zcanlib.GetReceiveNum(self.chn_handle, 1)  # 1 for CANFD
+                            if rcv_num > 0:
+                                # 接收CAN FD帧
+                                rcv_canfd_msgs, actual_num = self.zcanlib.ReceiveFD(self.chn_handle, rcv_num, 1000)
+                                for i in range(actual_num):
+                                    frame = rcv_canfd_msgs[i].frame
+                                    self.can_data.append(frame)
+                                    if hasattr(self, 'can_message_page') and self.can_message_page:
+                                        self.can_message_page.append_message(str(frame))
+                    except Exception as e:
+                        logger.debug(f"CAN reading error: {e}")
+                        pass
                 time.sleep(0.01)  # 避免 CPU 占用过高
 
         self.can_reader_thread = threading.Thread(target=can_reader, daemon=True)
@@ -602,7 +621,11 @@ class RealTimePlotWindow(QMainWindow):
 
         # 初始化图表
         self.line1, = self.ax1.plot([], [], 'b-', label='Total Torque')
-        self.line2, = self.ax1.plot([], [], 'r--', label='Scale Torque')
+        # self.line2, = self.ax1.plot([], [], 'r--', label='Scale Torque')
+
+        self.ax1.set_xlabel('Steering Angle (degrees)')
+        self.ax1.set_ylabel('Torque')
+
         self.ax1.legend()
         self.ax1.grid(True)
 
@@ -666,17 +689,45 @@ class RealTimePlotWindow(QMainWindow):
             return  # 非当前 Tab 不刷新
 
 
-        t = self.torque_data['time']
-        total = self.torque_data['total_torque']
-        scale = self.torque_data['scale_torque']
+        # t = self.torque_data['time']
+        # 使用转向角数据替代时间数据作为 X 轴
+        steering_angles = self.torque_data['steering_angle']
+        total_torques = self.torque_data['total_torque']
+        # scale_torques = self.torque_data['scale_torque']
 
-        if len(t) > 0:
-            self.line1.set_data(t, total)
-            self.line2.set_data(t, scale)
-            self.ax1.set_xlim(max(0, t[-1] - 10), t[-1] + 1)
-            current_min = min(min(total), min(scale)) - 100 if len(total) > 0 else -2000
-            current_max = max(max(total), max(scale)) + 100 if len(total) > 0 else 2000
-            self.ax1.set_ylim(current_min, current_max)
+
+        # if len(t) > 0:
+        #     self.line1.set_data(t, total)
+        #     self.line2.set_data(t, scale)
+        #     self.ax1.set_xlim(max(0, t[-1] - 10), t[-1] + 1)
+        #     current_min = min(min(total), min(scale)) - 100 if len(total) > 0 else -2000
+        #     current_max = max(max(total), max(scale)) + 100 if len(total) > 0 else 2000
+        #     self.ax1.set_ylim(current_min, current_max)
+
+        if len(steering_angles) > 0 and len(total_torques) > 0:
+        # 确保两个数组长度一致
+        # 直接使用所有数据点，不截取最新数据
+            # x_data = steering_angles
+            # total_data = total_torques
+            # scale_data = scale_torques
+
+                    # 确保x轴和y轴数据长度一致
+            min_length = min(len(steering_angles), len(total_torques))
+            if min_length > 0:
+                # 取最后min_length个数据点，确保数据长度一致
+                x_data = steering_angles[-min_length:]
+                total_data = total_torques[-min_length:]
+                # scale_data = scale_torques[-min_length:]
+
+            self.line1.set_data(x_data, total_data)
+            # self.line2.set_data(x_data, scale_data)
+            # 设置坐标轴范围为固定值
+            self.ax1.set_xlim(-540, 540)
+            self.ax1.set_ylim(-5000, 5000)        
+
+
+
+        
 
         keys = ['desired_torque', 'damping', 'friction',  'lateral_effect','suspension_effect','steering_angle', 'steering_rate', 'rate_dir']
         values = [np.mean(self.torque_data[key]) if self.torque_data[key] else 0 for key in keys]

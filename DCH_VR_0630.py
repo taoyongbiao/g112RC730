@@ -71,7 +71,7 @@ def _init_zcan(real_can):
 
 
 # 数据缓存
-MAX_DATA_POINTS = 100  # 显示最近100个点
+MAX_DATA_POINTS = 5000 # 显示最近100个点
 torque_data = {
     'time': [],
     'total_torque': [],
@@ -886,6 +886,14 @@ def record_torque_data(start_time, desired_torque, damping, friction, total_torq
     torque_data['total_torque'].append(-total_torque)
     torque_data['scale_torque'].append(scale_torque)
 
+    
+    # 确保转向角数据也被记录
+    torque_data['steering_angle'].append(G_STEERING_WHEEL_ANGLE)
+    torque_data['steering_rate'].append(G_STEERING_RATE)
+    torque_data['rate_dir'].append(G_RATE_DIR)
+    
+    
+    
      # 添加lateral_effect记录（如果还不存在）
     if 'lateral_effect' not in torque_data:
         torque_data['lateral_effect'] = []
