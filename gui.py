@@ -144,8 +144,9 @@ class CanMessagePage(QWidget):
     "can信号页面"
     # 添加信号用于线程安全的消息更新
     message_received = Signal(str)
-    def __init__(self):
+    def __init__(self, main_window=None):
         super().__init__()
+        self.parent_window = main_window  # 保存主窗口引用
         self.init_ui()
         self.filter_id = None  # 当前筛选的 CAN ID
         # 连接信号到槽函数
@@ -184,10 +185,10 @@ class CanMessagePage(QWidget):
 
     def refresh_display(self):
         """根据 filter_id 刷新显示"""
-        # pass  # 后续由主窗口调用传入原始数据并处理过滤逻辑
-        parent_window = self.parent() #获取当前窗口的父窗口
-        if not parent_window:  # 确保父窗口存在
-            logger.error("Parent window not found") 
+
+        # 使用传递进来的主窗口引用
+        if not self.main_window or not hasattr(self.main_window, 'can_data'):
+            logger.error("Main window with can_data not found") 
             return
         
         self.text_edit.clear()
@@ -200,6 +201,9 @@ class RealTimePlotWindow(QMainWindow):
     def __init__(self, config_ready_event,config=None):
         super().__init__()
         self.log_page = None  # 添加日志页面属性
+
+        self.can_reader_thread = None  # 添加线程引用
+        self.can_reader_stop_flag = False  # 添加线程停止标志
 
 
         # 获取项目根目录路径
@@ -361,8 +365,9 @@ class RealTimePlotWindow(QMainWindow):
 
     #can数据读取线程
     def start_can_reader(self):
+        self.can_reader_stop_flag = False  # 重置停止标志
         def can_reader():
-            while self.is_connected:
+            while not self.can_reader_stop_flag and self.is_connected:
                 if self.zcanlib and self.chn_handle:
                     try:
                         # 统一使用 ReceiveFD 方法处理CAN数据
@@ -387,15 +392,12 @@ class RealTimePlotWindow(QMainWindow):
 
     
     def reset_all_states(self):
-    # """ 清除所有运行时状态 """
-        # print("Stopping all threads...")
-        
+        # 设置停止标志来终止线程
+        self.can_reader_stop_flag = True
 
-        # for thread in self.running_threads:
-        #     if thread.is_alive():
-        #         thread.join(timeout=1)  # 等待线程结束，最多等待1秒
-
-        # self.running_threads.clear()  # 清空线程列表
+        # 等待CAN读取线程结束（设置超时避免无限等待）
+        if self.can_reader_thread and self.can_reader_thread.is_alive():
+            self.can_reader_thread.join(timeout=1.0)  # 最多等待1秒
 
         # 清空图表数据
         for key in self.torque_data:
@@ -637,7 +639,9 @@ class RealTimePlotWindow(QMainWindow):
 
 
         # CAN 报文页
-        self.can_message_page = CanMessagePage()
+        # self.can_message_page = CanMessagePage()
+        # 创建对象时传递参数
+        self.can_message_page = CanMessagePage(self)
         self.tabs.addTab(self.can_message_page, "CAN Messages")#将CAN报文页添加到标签页
 
         # 添加 Tab 控件到主布局
