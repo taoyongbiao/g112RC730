@@ -29,7 +29,8 @@ class MockACAPI:
 
     def AC_GetSpeedKmh(self):
         # return 80 + 50 * math.sin((time.time() - self.start_time) * 0.5)
-         return 80 + 50 * math.sin((time.time() - self.start_time) * 2 * math.pi)#1s完成一个周期的变化
+        #  return 80 + 50 * math.sin((time.time() - self.start_time) * 2 * math.pi)#1s完成一个周期的变化
+        return 130
 
     def AC_GetSteerAngle(self):
         return 450 * math.sin((time.time() - self.start_time) * 1.0)

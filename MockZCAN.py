@@ -3,9 +3,10 @@ import time
 import threading
 from ctypes import Structure, c_uint, c_ubyte, c_ulonglong, byref
 from loguru import logger
+import math
 
 G_STEERING_SBW_CAN_ID = 0x8E  # canid
-# 与主程序一致的结构体定义
+# 与主程序一致的结构体定义F
 class ZCAN_CANFD_FRAME(Structure):
     _pack_ = 1
     _fields_ = [
@@ -163,16 +164,18 @@ class MockZCAN:
 
     # 自动生成方向盘角度和油门/刹车帧的模拟函数
     def _simulate_canfd_frames(self):
-        import math
+
 
         G_STEERING_SBW_CAN_ID = 0x8E  #转向系统的CAN总线ID
+        # G_STEERING_SBW_CAN_ID = 0x11F
         G_THROTTLE_BRAKE_CAN_ID = 0x342 #油门/刹车的CAN总线ID
 
         while self.running:
             now = int(time.time() * 1000)
             angle = 200 * math.sin(now / 1000)
             throttle = int(50 + 50 * math.sin(now / 500))
-            brake = int(50 + 50 * math.cos(now / 500))
+            # brake = int(50 + 50 * math.cos(now / 500))
+            brake=0
 
             
             # 构造方向盘角度帧
