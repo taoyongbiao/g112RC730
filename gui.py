@@ -187,12 +187,12 @@ class CanMessagePage(QWidget):
         """根据 filter_id 刷新显示"""
 
         # 使用传递进来的主窗口引用
-        if not self.main_window or not hasattr(self.main_window, 'can_data'):
+        if not self.parent_window or not hasattr(self.parent_window, 'can_data'):
             logger.error("Main window with can_data not found") 
             return
         
         self.text_edit.clear()
-        for message in parent_window.can_data:  # 假设传入了 parent_window
+        for message in self.parent_window.can_data:  # 假设传入了 parent_window
             if self.filter_id is None or message.id == self.filter_id:
                 self.text_edit.append(str(message))
 
@@ -395,6 +395,13 @@ class RealTimePlotWindow(QMainWindow):
         # 设置停止标志来终止线程
         self.can_reader_stop_flag = True
 
+        wifi_module.wifi_flag_event.clear()
+        run_main_flag_event.clear()
+        wifi_module.CONNECT_EVENT.clear()  # 如果使用WiFi也需要清除
+        
+        #重置监听是否开启主逻辑
+        self.config_ready_event.clear()  # 停止信号
+
         # 等待CAN读取线程结束（设置超时避免无限等待）
         if self.can_reader_thread and self.can_reader_thread.is_alive():
             self.can_reader_thread.join(timeout=1.0)  # 最多等待1秒
@@ -407,18 +414,15 @@ class RealTimePlotWindow(QMainWindow):
 
         # 重置图表
         self.line1.set_data([], [])
-        self.line2.set_data([], [])
+        
         for bar in self.bars:
             bar.set_height(0)
         for text in self.text_objects:
             text.set_text("")
         self.canvas.draw()
 
-        #重置监听是否开启主逻辑
-        self.config_ready_event.clear()  # 停止信号
 
-        wifi_module.wifi_flag_event.clear()
-        run_main_flag_event.clear()
+
 
         # # 重置CAN设备（如果支持）
 
