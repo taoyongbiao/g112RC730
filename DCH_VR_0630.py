@@ -119,12 +119,15 @@ G_STEERING_WHEEL_ANGLE_OLD = 0.0
 G_THROTTLE = 0.0
 G_BRAKE = 0.0
 
+G_HAND_FORCE = 0.0
+
 '''
  CAN ID
 '''
-G_STEERING_CAN_ID = 0X11F
-# G_STEERING_SBW_CAN_ID = 0X8E
-G_STEERING_SBW_CAN_ID = 0X11F
+# G_STEERING_CAN_ID = 0X11F
+G_STEERING_CAN_ID=0x8E
+G_STEERING_SBW_CAN_ID = 0X8E
+# G_STEERING_SBW_CAN_ID = 0X11F
 G_THROTTLE_BRAKE_CAN_ID = 0x342
 
 INVALID_DEVICE_HANDLE = 0
@@ -788,6 +791,34 @@ def decode_steering_wheel_angle_frame(can_id, frame_data):
 
     return steering_wheel_angle, steering_rate
 
+def decode_hand_force_data(frame_data):
+    """
+    从CAN帧数据中提取手力数据
+    手力数据存储在第13字节(索引12)和第14字节(索引13)中
+    使用小端序格式(低字节在前，高字节在后)
+    
+    参数:
+        frame_data: CAN帧数据字节数组
+    
+    返回:
+        hand_force: 手力数据(有符号16位整数)，单位可能需要根据实际协议转换
+    """
+    # 检查数据长度是否足够
+    if len(frame_data) < 14:
+        raise ValueError("CAN帧数据长度不足，无法提取手力数据")
+    
+    # 提取16位数据 (小端序: 低字节在前，高字节在后)
+    force_raw = (frame_data[13] << 8) | frame_data[12]  # frame_data[13]是高字节，frame_data[12]是低字节
+    
+    # 处理有符号16位整数 (补码表示法)
+    if force_raw > 0x7FFF:  # 如果最高位为1，表示负数
+        # 转换补码为负数
+        hand_force = force_raw - 0x10000
+    else:
+        hand_force = force_raw
+    
+    return hand_force
+
 
 def turning_response(vehicle_type, steering_wheel_angle, steering_wheel_angle_old, steering_wheel_rate, speed):
     """
@@ -877,33 +908,32 @@ def can_start(zcanlib, device_handle, chn):
     return chn_handle
 
 #记录扭矩数据
-def record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque,lateral_effect,suspension_effect):
-    current_time = time.time() - start_time
-    torque_data['time'].append(current_time)
-    torque_data['desired_torque'].append(-desired_torque)
-    torque_data['damping'].append(-damping)
-    torque_data['friction'].append(-friction)
-    torque_data['total_torque'].append(-total_torque)
-    torque_data['scale_torque'].append(scale_torque)
+def record_torque_data(**kwargs):
+    # 处理时间字段
+    start_time = kwargs.pop('start_time', None)
+    current_time = time.time() - start_time if start_time is not None else time.time()
+    
+    if 'time' not in torque_data:
+        torque_data['time'] = []
 
-    
-    # 确保转向角数据也被记录
-    torque_data['steering_angle'].append(G_STEERING_WHEEL_ANGLE)
-    torque_data['steering_rate'].append(G_STEERING_RATE)
-    torque_data['rate_dir'].append(G_RATE_DIR)
-    
-    
-    
-     # 添加lateral_effect记录（如果还不存在）
-    if 'lateral_effect' not in torque_data:
-        torque_data['lateral_effect'] = []
-    torque_data['lateral_effect'].append(lateral_effect)
 
-         # 添加suspension_effect记录（如果还不存在）
-    if 'suspension_effect' not in torque_data:
-        torque_data['suspension_effect'] = []
-    torque_data['suspension_effect'].append(suspension_effect)
+    # 处理动态传入的额外参数
+    for key, value in kwargs.items():
+        if key not in torque_data:
+            torque_data[key] = []
+        torque_data[key].append(value)
 
+    # 添加关键的转向数据（如果未提供）
+    steering_fields = {
+        'steering_angle': G_STEERING_WHEEL_ANGLE,
+        'steering_rate': G_STEERING_RATE,
+        'rate_dir': G_RATE_DIR
+    }    
+    for field, default_value in steering_fields.items():
+        if field not in kwargs:  # 未显式提供时使用默认值
+            if field not in torque_data:
+                torque_data[field] = []
+            torque_data[field].append(default_value)
 
     # 控制最大数据量
     if len(torque_data['time']) > MAX_DATA_POINTS:
@@ -1109,6 +1139,8 @@ def send_messages(chn_handle, ac_api, zcanlib):
                                                  ctypes.c_float(G_STEERING_RATE))
             total_torque = desired_torque - damping - friction+lateral_effect+suspension_effect
 
+            
+
             logger.info(f"desired_torque: {desired_torque:.2f}, damping: {damping:.2f}, friction: {friction:.2f}, total: {total_torque:.2f}")
 
             scale_torque = total_torque * 0.001 * 0.05 * -1  # 54330.05重 #另一台u9是0.06
@@ -1129,24 +1161,29 @@ def send_messages(chn_handle, ac_api, zcanlib):
             #     desired_torque = damping = friction = total_torque = scale_torque = 0.0
             
             
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            record_torque_data(start_time, desired_torque, damping, friction, total_torque, scale_torque,lateral_effect,suspension_effect)
-            print(f"desired: {desired_torque:.2f}, damping: {damping:.2f}, friction: {friction:.2f}, "
-                  f"total: {total_torque:.2f}, scale: {scale_torque:.6f}")
+             
+            record_torque_data(
+                start_time=start_time,
+                desired_torque=desired_torque,
+                damping=damping,
+                friction=friction,
+                total_torque=total_torque,
+                scale_torque=scale_torque,
+                lateral_effect=lateral_effect,
+                suspension_effect=suspension_effect,
+                # 可以轻松添加新字段
+                hand_force=G_HAND_FORCE,
+                # 其他自定义字段...
+            )
 
 
             #print("scale_torque", scale_torque)
             logger.info(f"scale_torque: {scale_torque:.6f}")
 
-            ffb_frame_data = encode_sbw_ffb_frame(scale_torque)
+            hand_torque=scale_torque-G_HAND_FORCE
+
+            # ffb_frame_data = encode_sbw_ffb_frame(scale_torque)
+            ffb_frame_data = encode_ffb_frame(hand_torque)
 
             steer_canfd_msgs = ZCAN_TransmitFD_Data()
 
@@ -1225,21 +1262,6 @@ def receive_messages(chn_handle, zcanlib):
                     can_id = frame.can_id
                     data = frame.data
 
-                    # 油门
-
-
-                    #if can_id == G_STEERING_CAN_ID or
-                    # if can_id == G_STEERING_SBW_CAN_ID:
-                    #     G_STEERING_WHEEL_ANGLE_OLD = G_STEERING_WHEEL_ANGLE
-                    #
-                    #     steering_angle, G_STEERING_RATE = decode_steering_wheel_angle_frame(can_id, data)
-                    #
-                    #     delta_angle = G_STEERING_WHEEL_ANGLE_OLD - G_STEERING_WHEEL_ANGLE
-                    #     G_RATE_DIR = 1 if delta_angle > 0 else -1
-                    #     G_STEERING_RATE = G_STEERING_RATE * G_RATE_DIR
-                    #
-                    #     steering_wheel_factor = 1.6
-                    #     G_STEERING_WHEEL_ANGLE = steering_angle * steering_wheel_factor
 
                     if can_id == G_STEERING_SBW_CAN_ID:
                         G_STEERING_WHEEL_ANGLE_OLD = G_STEERING_WHEEL_ANGLE
@@ -1257,6 +1279,13 @@ def receive_messages(chn_handle, zcanlib):
                         logger.debug(f"G_RATE_DIR: {G_RATE_DIR}")
 
                         G_STEERING_RATE = G_STEERING_RATE * G_RATE_DIR
+
+                        G_HAND_FORCE = decode_hand_force_data(data) #提取手力矩数据
+
+
+
+
+
                         if RC:
                             rc_inputdata = FrameInputData()
                             rc_inputdata.steer = steering_angle / 360
