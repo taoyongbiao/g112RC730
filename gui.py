@@ -620,6 +620,19 @@ class RealTimePlotWindow(QMainWindow):
         self.tabs.addTab(plot_widget, "Torque Plot")#将绘图区域添加进标签页
 
 
+        # 设置初始坐标轴范围
+        # 设置上部图表（转向角 vs 扭矩）的初始范围
+        self.ax1.set_xlim(-540, 540)
+        self.ax1.set_ylim(-5000, 5000)
+        self.ax1.set_xlabel('Steering Angle (degrees)')
+        self.ax1.set_ylabel('Torque')
+        self.ax1.legend()
+        self.ax1.grid(True)
+        
+        # 设置底部直方图的初始范围
+        self.ax2.set_ylim(-5000, 5000)
+        self.ax2.set_ylabel('Values')
+        self.ax2.grid(True, axis='y')
 
         # self.canvas.mpl_connect('button_press_event', self.onclick)
         # 定时器，定时刷新数据
