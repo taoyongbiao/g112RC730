@@ -73,20 +73,20 @@ def _init_zcan(real_can):
 # 数据缓存
 MAX_DATA_POINTS = 5000 # 显示最近100个点
 torque_data = {
-    'time': [],
-    'total_torque': [],
-    'scale_torque': [],
-    'desired_torque': [],
-    'damping': [],
-    'friction': [],
+    # 'time': [],
+    # 'total_torque': [],
+    # 'scale_torque': [],
+    # 'desired_torque': [],
+    # 'damping': [],
+    # 'friction': [],
 
-    # 新增方向盘相关数据
-    # 'steering_angle_old': [],
-    'steering_angle': [],
-    'steering_rate': [],
-    'rate_dir': [],
-    'lateral_effect':[],
-    'suspension_effect':[],
+    # # 新增方向盘相关数据
+    # # 'steering_angle_old': [],
+    # 'steering_angle': [],
+    # 'steering_rate': [],
+    # 'rate_dir': [],
+    # 'lateral_effect':[],
+    # 'suspension_effect':[],
 }
 
 
@@ -909,13 +909,6 @@ def can_start(zcanlib, device_handle, chn):
 
 #记录扭矩数据
 def record_torque_data(**kwargs):
-    # 处理时间字段
-    start_time = kwargs.pop('start_time', None)
-    current_time = time.time() - start_time if start_time is not None else time.time()
-    
-    if 'time' not in torque_data:
-        torque_data['time'] = []
-
 
     # 处理动态传入的额外参数
     for key, value in kwargs.items():
@@ -935,11 +928,16 @@ def record_torque_data(**kwargs):
                 torque_data[field] = []
             torque_data[field].append(default_value)
 
-    # 控制最大数据量
-    if len(torque_data['time']) > MAX_DATA_POINTS:
-        for key in torque_data:
-            if torque_data[key]:
-                torque_data[key].pop(0)
+    # 控制最大数据量（使用任意一个字段的长度来判断，因为所有字段应该保持同步增长）
+    # 找到第一个非空字段来检查长度
+    for key in torque_data:
+        if torque_data[key]:  # 找到第一个非空字段
+            if len(torque_data[key]) > MAX_DATA_POINTS:
+                # 当超过最大点数时，移除所有字段的最旧数据点
+                for k in torque_data:
+                    if torque_data[k]:
+                        torque_data[k].pop(0)
+            break  # 只需要检查一个字段即可
 #读取车辆状态
 def  read_vehicle_status(ac_api):
     if ac_api:
@@ -1162,8 +1160,15 @@ def send_messages(chn_handle, ac_api, zcanlib):
             
             
              
+
+
+
+            #print("scale_torque", scale_torque)
+            logger.info(f"scale_torque: {scale_torque:.6f}")
+
+            hand_torque=scale_torque-G_HAND_FORCE
+
             record_torque_data(
-                start_time=start_time,
                 desired_torque=desired_torque,
                 damping=damping,
                 friction=friction,
@@ -1173,17 +1178,12 @@ def send_messages(chn_handle, ac_api, zcanlib):
                 suspension_effect=suspension_effect,
                 # 可以轻松添加新字段
                 hand_force=G_HAND_FORCE,
+                hand_torque=hand_torque
                 # 其他自定义字段...
             )
 
-
-            #print("scale_torque", scale_torque)
-            logger.info(f"scale_torque: {scale_torque:.6f}")
-
-            hand_torque=scale_torque-G_HAND_FORCE
-
             # ffb_frame_data = encode_sbw_ffb_frame(scale_torque)
-            ffb_frame_data = encode_ffb_frame(hand_torque)
+            ffb_frame_data = encode_sbw_ffb_frame(hand_torque)
 
             steer_canfd_msgs = ZCAN_TransmitFD_Data()
 

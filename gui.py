@@ -243,19 +243,21 @@ class RealTimePlotWindow(QMainWindow):
         self.config_ready_event = config_ready_event
 
                 # 接收传入的 torque_data
-        self.torque_data = torque_data or {
-            'time': [],
-            'total_torque': [],
-            'scale_torque': [],
-            'desired_torque': [],
-            'damping': [],
-            'friction': [],
-            'steering_angle': [],
-            'steering_rate': [],
-            'rate_dir': [],
-            'lateral_effect':[],
-            'suspension_effect':[]
-        }
+        # self.torque_data = torque_data or {
+
+        #     'desired_torque': [],
+        #     'damping': [],
+        #     'friction': [],
+        #     'total_torque': [],
+        #     'scale_torque': [],
+        #     'lateral_effect':[],
+        #     'suspension_effect':[],
+        #     'steering_angle': [],
+        #     'steering_rate': [],
+        #     'rate_dir': [],
+
+        # }
+        self.torque_data = torque_data
 
 
     
@@ -696,8 +698,9 @@ class RealTimePlotWindow(QMainWindow):
 
         # t = self.torque_data['time']
         # 使用转向角数据替代时间数据作为 X 轴
-        steering_angles = self.torque_data['steering_angle']
-        total_torques = self.torque_data['total_torque']
+        # 安全地访问字典键，提供默认值
+        steering_angles = self.torque_data.get('steering_angle', [])
+        total_torques = self.torque_data.get('total_torque', [])
         # scale_torques = self.torque_data['scale_torque']
 
 
@@ -732,17 +735,73 @@ class RealTimePlotWindow(QMainWindow):
 
 
 
+        # 动态处理底部直方图
+        # 定义标签处理函数
+        def format_label(key):
+            """
+            格式化标签显示名称
+            首字母大写，如果key长度大于10则去掉下划线及其以后的字符
+            """
+            if len(key) > 10 and '_' in key:
+                # 找到第一个下划线的位置并截取前面部分
+                truncated_key = key.split('_')[0]
+                # 首字母大写
+                return truncated_key.capitalize()
+            else:
+                # 首字母大写
+                return key.capitalize()
+
+
+
+
+
+
+
+        # 获取所有可用字段（按存储顺序，排除空字段）
+        display_fields = [key for key in self.torque_data.keys() 
+                        if len(self.torque_data[key]) > 0]
         
+        # 如果没有数据字段，直接返回
+        if not display_fields:
+            return
+        
+        # 如果字段数量发生变化或首次创建，重新初始化图表
+        if not hasattr(self, 'bars') or len(display_fields) != len(self.bars):
+            # 清除原有的图表元素
+            self.ax2.clear()
+            
+            # 创建颜色循环
+            colors = ['blue', 'green', 'orange', 'purple', 'red', 'brown', 'cyan', 'yellow', 'pink', 'gray']
+            bar_colors = [colors[i % len(colors)] for i in range(len(display_fields))]
+            
+            # 获取标签（使用新定义的格式化函数）
+            bar_labels = [format_label(field) for field in display_fields]
+            
+            # 创建新的柱状图和文本对象
+            self.bars = self.ax2.bar(bar_labels, [0]*len(display_fields), color=bar_colors)
+            self.text_objects = [self.ax2.text(0, 0, "", ha='center', va='bottom') for _ in self.bars]
+            
+            self.ax2.set_ylabel('Values')
+            self.ax2.grid(True, axis='y')
+        
+        # 计算并更新值
+        values = []
+        for field in display_fields:
+            if self.torque_data[field]:
+                data_points = self.torque_data[field][-100:] if len(self.torque_data[field]) >= 100 else self.torque_data[field]
+                values.append(np.mean(data_points))
+            else:
+                values.append(0)
+        
+        # 更新柱状图和文本
+        for i, (bar, val) in enumerate(zip(self.bars, values)):
+            bar.set_height(val)
+            offset = abs(val) * 0.02 + 1
+            text_y_pos = val + offset if val >= 0 else val - offset
+            self.text_objects[i].set_position((bar.get_x() + bar.get_width()/2., text_y_pos))
+            self.text_objects[i].set_text(f'{val:.3f}')
 
-        keys = ['desired_torque', 'damping', 'friction',  'lateral_effect','suspension_effect','steering_angle', 'steering_rate', 'rate_dir']
-        values = [np.mean(self.torque_data[key]) if self.torque_data[key] else 0 for key in keys]
-        max_val = max(values) if values else 1
-        offset = max(0.02 * max_val, 20)
-
-        for i, val in enumerate(values):
-            self.bars[i].set_height(val)
-            self.text_objects[i].set_position((self.bars[i].get_x() + self.bars[i].get_width()/2., val + offset))
-            self.text_objects[i].set_text(f'{val:.1f}')
-
-        self.ax2.set_ylim(top=max_val * 1.2 if max_val > 0 else 1)
+        # 设置底部直方图 Y 轴范围为固定值 -5000 到 5000
+        self.ax2.set_ylim(-5000, 5000)
+        
         self.canvas.draw()
