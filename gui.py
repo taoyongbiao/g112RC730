@@ -607,7 +607,7 @@ class RealTimePlotWindow(QMainWindow):
 
 
 
-
+        # 初始化图表（但不创建具体的柱状图）
         self.figure = Figure()
         self.ax1 = self.figure.add_subplot(211)
         self.ax2 = self.figure.add_subplot(212)
@@ -635,11 +635,8 @@ class RealTimePlotWindow(QMainWindow):
         self.ax1.legend()
         self.ax1.grid(True)
 
-        bar_labels = ['Desired', 'Damping', 'Friction',  'Lateral','suspension','Steer Angle', 'Steer Rate', 'Rate Dir']
-        self.bars = self.ax2.bar(bar_labels, [0]*len(bar_labels), color=[
-            'blue', 'green', 'orange', 'purple', 'red', 'brown', 'cyan','yellow'
-        ])
-        self.text_objects = [self.ax2.text(0, 0, "", ha='center', va='bottom') for _ in self.bars]
+        bar_labels = []
+        self.text_objects = []
 
 
         # CAN 报文页
