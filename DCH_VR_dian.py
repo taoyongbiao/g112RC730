@@ -8,7 +8,7 @@ import os
 
 # 巅峰极速结构体
 # 定义嵌套结构体
-class FrameSuspensionData(ctypes.Structure):
+class FrameSuspensionDataclass(ctypes.Structure):
     _pack_ = 4
     _fields_ = [
         ("height", ctypes.c_float),

@@ -163,6 +163,8 @@ class ForceFeedbackAlgorithm:
 
         return friction, damping
 
+
+    # 悬挂效应 通过前后轮的悬架高度差计算
     def get_suspension_effect(self, speed, suspension_travel):
         sus_front = (suspension_travel.st[0] + suspension_travel.st[1])/2
         sus_back = (suspension_travel.st[2]+suspension_travel.st[3])/2
@@ -176,6 +178,8 @@ class ForceFeedbackAlgorithm:
 
         return np.clip(road_effect, -self.max_road_effect, self.max_road_effect)
 
+
+    # 侧滑效应 g效应 + 轮胎滑移效进行计算，同时通过速度缩放进行缩放
     def get_lateral_effect(self, speed, acc_g, angular_vel, wheel_slip):
         speed_factor = np.tanh(speed / 400)
 

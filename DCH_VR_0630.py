@@ -993,44 +993,7 @@ def send_messages(chn_handle, ac_api, zcanlib):
 
 
     try:
-        # if ac_api:
-            # ac_api.AC_GetRoll.restype = ctypes.c_float
-            # ac_api.AC_GetPitch.restype = ctypes.c_float
 
-
-            # ac_api.AC_GetWheelSlip.restype = WheelSlip
-            # ac_api.AC_GetAccG.restype = AccG
-            # ac_api.AC_GetSuspensionTravel.restype = SuspensionTravel
-            # ac_api.AC_GetLocalAngularVel.restype = LocalAngularVel
-
-            #新增
-
-
-            # class WheelSlip(ctypes.Structure):
-            #     _fields_ = [("slip", ctypes.c_float * 4)]
-            #
-            # ac_api.AC_GetWheelSlip.restype = WheelSlip
-            #
-            # class AccG(ctypes.Structure):
-            #     _fields_ = [("accg", ctypes.c_float * 3)]
-            #
-            # ac_api.AC_GetAccG.restype = AccG
-            #
-            # class SuspensionTravel(ctypes.Structure):
-            #     _fields_ = [("st", ctypes.c_float * 4)]
-            #
-            # ac_api.AC_GetSuspensionTravel.restype = SuspensionTravel
-            #
-            # class LocalAngularVel(ctypes.Structure):
-            #     _fields_ = [("VehAngVel", ctypes.c_float * 3)]
-            #
-            # ac_api.AC_GetLocalAngularVel.restype = LocalAngularVel
-
-            # if not isinstance(ac_api, ACAPI): 
-            #     ac_api.AC_GetWheelSlip.restype = WheelSlip
-            #     ac_api.AC_GetAccG.restype = AccG
-            #     ac_api.AC_GetSuspensionTravel.restype = SuspensionTravel
-            #     ac_api.AC_GetLocalAngularVel.restype = LocalAngularVel
         cnt = 0
         while run_main_flag_event.is_set():
 
@@ -1038,30 +1001,9 @@ def send_messages(chn_handle, ac_api, zcanlib):
             pitch = 0.0
             speed = 0.0
 
-#===================================整合，从游戏中获取数据===========================================
-            # if ac_api:
-            #     roll = ac_api.AC_GetRoll()  # 获取游戏中的车辆滚转角
-            #     pitch = ac_api.AC_GetPitch()
-            #     speed = ac_api.AC_GetSpeedKmh()
-
-                
-            #     # #新增
-            #     # try:
-            #     #     wheel_slip = ac_api.AC_GetWheelSlip()
-            #     #     acc_g = ac_api.AC_GetAccG()
-            #     #     suspension_travel = ac_api.AC_GetSuspensionTravel()
-            #     #     local_angular_vel = ac_api.AC_GetLocalAngularVel()
-            #     # except Exception as e:
-            #     #     print(f"[ERROR] 获取 WheelSlip 失败: {e}")
-
-            #     wheel_slip = ac_api.AC_GetWheelSlip()
-            #     acc_g = ac_api.AC_GetAccG()
-            #     suspension_travel = ac_api.AC_GetSuspensionTravel()
-            #     local_angular_vel = ac_api.AC_GetLocalAngularVel()
-#=====================================================================================================
             
             if RC:
-                roll, pitch, speed= read_vehicle_status_from_rc()
+                roll, pitch, speed,suspensionData= read_vehicle_status_from_rc()
             else:
                 roll, pitch, speed, wheel_slip, acc_g, suspension_travel, local_angular_vel = read_vehicle_status(ac_api)   
 
@@ -1103,14 +1045,6 @@ def send_messages(chn_handle, ac_api, zcanlib):
                 #print("roll,pitch", roll_pitch_steer_ready_ret)
                 logger.info("roll,pitch", roll_pitch_steer_ready_ret)
 
-
-
-
-            # total_torque =(desired_torque+ friction + damping + tire_effect + lateral_effect + road_effect)*-1
-
-
-
-            # lateral_effect = ffb.get_lateral_effect(speed,acc_g,ctypes.c_float(G_STEERING_WHEEL_ANGLE), ctypes.c_float(G_STEERING_RATE/1080.0),wheel_slip)
 
 
 
@@ -1358,7 +1292,7 @@ def initialize_can(config, window=None):
     # 根据配置选择实际类
     ZCAN = _mock_zcan if not use_real_can else _real_zcan
 
-    
+
 
     try :
         zcanlib = ZCAN()
@@ -1461,44 +1395,7 @@ def start_main_process(config,window=None):
         logger.info("Using mock ac_api.")
         ac_api = ACAPI()
 
-    # if config['USE_REAL_CAN']:
-    #     pass
-    # else:
-    #     from MockZCAN import MockZCAN as ZCAN #使用了覆盖机制来覆盖默认的ZCAN类
 
-    # use_real_can = config.get('USE_REAL_CAN', False)
-
-    # # 初始化 ZCAN 类型（仅第一次有效）
-    # _init_zcan(use_real_can)
-
-    # # 根据配置选择实际类
-    # ZCAN = _mock_zcan if not use_real_can else _real_zcan
-
-
-    # zcanlib = ZCAN()
-    # if window is not None:
-    #     window.set_zcanlib(zcanlib)
-
-    # if config['USE_REAL_CAN']:
-    #     handle = zcanlib.OpenDevice(ZCAN_USBCANFD_MINI, 0, 0)
-    #     if handle == INVALID_DEVICE_HANDLE:
-    #         print("Open Device failed!")
-    #         exit(0)
-    #     print(f"device handle: {handle}")
-
-    #     info = zcanlib.GetDeviceInf(handle)
-    #     print(f"Device Info:\n{info}")
-
-    #     chn_handle = can_start(zcanlib, handle, 0)
-    #     print(f"channel handle: {chn_handle}")
-    # else:
-    #     # 使用 MockZCAN 模拟 CAN 设备
-    #     handle = "simulated_device"  # 虚拟设备句柄
-    #     chn_handle = "simulated_channel_0"  # 虚拟通道句柄
-    #     zcanlib.StartCAN(chn_handle)
-    #     print("+++++++++++++++++++++++++Running in simulation mode without ZCAN device.++++++++++++++++")
-    #     # 设置回调 当有新的方向盘角度数据到达时（例如：通过 inject_frame() 注入模拟帧），MockZCAN 会触发 on_steering_update(angle, rate, direction)；
-    #     zcanlib.on_steering_update = lambda a, r, d: update_g_vars(a, r, d)
 
     if config['USE_WIFI']:
         # 创建线程
@@ -1533,48 +1430,44 @@ def start_main_process(config,window=None):
         t.daemon = True
         t.start()
     
-    # # 将线程列表传入 GUI 层（假设 window 是全局可用的）
-    # if hasattr(window, 'set_running_threads'):
-    #     window.set_running_threads(running_threads)
-    
-    
 
 
-    # 新开线程用于实时绘图
-    # time.sleep(2)
-    # plot_thread = threading.Thread(target=real_time_plot)
-    # plot_thread.daemon = True  # 设置为守护线程，主程序退出时自动关闭
-    # plot_thread.start()
+    # # 非 GUI 模式下等待线程结束
+    # try:
+    #     for t in running_threads:
+    #         t.join() # 等待线程结束 阻塞主线程顺序等待所有线程依次完成
+    # except KeyboardInterrupt:
+    #     #print("Main process interrupted by user.")
+    #     logger.error("Main process interrupted by user.")
 
 
-    # receiver_thread.join()
-    # if config['USE_WIFI']:
-    #     send_broadcast_thread.join()
-    #     heartbeat_monitor_thread.join()
-    #     sender_heartbeat_thread.join()
-    # sender_thread.join()
-
-    # 非 GUI 模式下等待线程结束
-    try:
-        for t in running_threads:
-            t.join() # 等待线程结束 阻塞主线程等待所有
-    except KeyboardInterrupt:
-        #print("Main process interrupted by user.")
-        logger.error("Main process interrupted by user.")
-
-
-
-        # 绘图展示数据
-    # plot_torque_data()
-
-
-    # zcanlib.ResetCAN(chn_handle)
-    # zcanlib.CloseDevice(handle)
         
-    # 清理资源
-    if not config['USE_WIFI']:
-        zcanlib.ResetCAN(chn_handle)
-        zcanlib.CloseDevice(handle)
+    # # 清理资源
+    # if not config['USE_WIFI']:
+    #     zcanlib.ResetCAN(chn_handle)
+    #     zcanlib.CloseDevice(handle)
+
+
+        # 可选：启动一个监控线程来处理清理工作
+    def monitor_threads():
+        try:
+            for t in running_threads:
+                t.join()  # 在监控线程中阻塞，不影响GUI主线程
+        except KeyboardInterrupt:
+            logger.error("Main process interrupted by user.")
+        finally:
+            # 清理资源
+            if not config['USE_WIFI']:
+                zcanlib.ResetCAN(chn_handle)
+                zcanlib.CloseDevice(handle)
+    
+    # 启动监控线程（可选）
+    monitor_thread = threading.Thread(target=monitor_threads)
+    monitor_thread.daemon = True
+    monitor_thread.start()
+    
+    # 立即返回，不阻塞GUI主线程
+    return running_threads
 
     # sys.exit(app.exec_())
 
@@ -1615,27 +1508,6 @@ if __name__ == "__main__":
         window.show()
         
 
-    #     print("请在绘图界面中设置 USE_WIFI / USE_REAL_CAN / USE_REAL_AC 变量并点击 Confirm 开始...")
-    # # config_ready_event.wait()  # 等待用户点击 "Confirm"
-
-    #     def wait_for_config():
-    #         if config_ready_event.is_set():
-    #             print("开始执行主流程，当前配置：")
-    #             print(f"USE_WIFI: {config['USE_WIFI']}, USE_REAL_CAN: {config['USE_REAL_CAN']}, USE_REAL_AC: {config['USE_REAL_AC']}")
-    #             # start_main_process(config)
-    #                     # 在新线程中启动主逻辑
-    #             # 在新线程中启动主逻辑
-    #             main_thread = threading.Thread(target=start_main_process, args=(config,))
-    #             main_thread.daemon = True
-    #             main_thread.start()
-    #         else:
-    #             QTimer.singleShot(100, wait_for_config)  # 每隔 100ms 再次检查
-
-    #     # wait_for_config()
-    #     QTimer.singleShot(100, wait_for_config)
-    #     print("开始执行主流程，当前配置：")
-    #     print(f"USE_WIFI: {config['USE_WIFI']}, USE_REAL_CAN: {config['USE_REAL_CAN']}, USE_REAL_AC: {config['USE_REAL_AC']}")
-        # sys.exit(app.exec_())
         sys.exit(app.exec())
 
     

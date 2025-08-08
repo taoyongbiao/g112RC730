@@ -46,6 +46,7 @@ import json
 from pathlib import Path
 
 
+
 class LogPage(QDialog):
     """日志显示弹窗"""
     def __init__(self, parent=None):
@@ -202,6 +203,8 @@ class RealTimePlotWindow(QMainWindow):
         super().__init__()
         self.log_page = None  # 添加日志页面属性
 
+
+
         self.can_reader_thread = None  # 添加线程引用
         self.can_reader_stop_flag = False  # 添加线程停止标志
 
@@ -285,7 +288,7 @@ class RealTimePlotWindow(QMainWindow):
 
         # 启动配置监听
         self.start_config_monitor()
-
+                    
     def load_config(self):
         """从项目目录加载配置"""
         try:
@@ -688,7 +691,7 @@ class RealTimePlotWindow(QMainWindow):
         logger.info("Configuration confirmed.")
         self.config_ready_event.set()
         # 主动调用一次 update_plot 更新图表
-        self.update_plot()
+        self.update_plot()  #使用主动调用而非槽函数
 
         # self.hide()
 
