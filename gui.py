@@ -2,12 +2,20 @@ import sys
 import numpy as np
 import matplotlib
 matplotlib.use('Qt5Agg')
-from PySide6.QtWidgets import (QApplication,QGroupBox, QMainWindow, QPushButton, QVBoxLayout, QWidget, 
-                                QLabel, QHBoxLayout,QRadioButton, QButtonGroup,QTextEdit, QTabWidget,
-                                QMenuBar, QMenu, QFileDialog,QDialog)
-from PySide6.QtCore import QTimer, Qt,Signal, QObject
-import matplotlib.pyplot as plt
+# from PySide6.QtWidgets import (QApplication,QGroupBox, QMainWindow, QPushButton, QVBoxLayout, QWidget, 
+# QLabel, QHBoxLayout,QRadioButton, QButtonGroup,QTextEdit, QTabWidget,
+# QMenuBar, QMenu, QFileDialog,QDialog)
+
+from PyQt5.QtWidgets import (QApplication, QGroupBox,          
+        QMainWindow,QPushButton, QVBoxLayout, QWidget, 
+        QLabel, QHBoxLayout, QRadioButton, QButtonGroup, QTextEdit, QTabWidget,
+        QMenuBar, QMenu, QFileDialog, QDialog)
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal as Signal, QObject
+# from PySide6.QtCore import QTimer, Qt,Signal, QObject
+
 import ctypes 
+
+import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import threading
@@ -296,7 +304,7 @@ class RealTimePlotWindow(QMainWindow):
             self.save_config()
             
             # 启动主进程
-            from DCH_VR_0630bk import start_main_process
+            from DCH_VR_0630 import start_main_process
             if not hasattr(self, 'main_thread') or self.main_thread is None or not self.main_thread.is_alive():
                 self.main_thread = threading.Thread(target=start_main_process, args=(self.config,self))
                 self.main_thread.daemon = True

@@ -1176,17 +1176,17 @@ def receive_messages(chn_handle, zcanlib):
 
             # 在 while 循环中更新
             # torque_data['steering_angle_old'].append(G_STEERING_WHEEL_ANGLE_OLD)
-            torque_data['steering_angle'].append(G_STEERING_WHEEL_ANGLE)
-            torque_data['steering_rate'].append(G_STEERING_RATE)
-            torque_data['rate_dir'].append(G_RATE_DIR)
+            # torque_data['steering_angle'].append(G_STEERING_WHEEL_ANGLE)
+            # torque_data['steering_rate'].append(G_STEERING_RATE)
+            # torque_data['rate_dir'].append(G_RATE_DIR)
 
-            # 控制长度
-            for key in [ 'steering_angle', 'steering_rate', 'rate_dir']:
-                if len(torque_data[key]) > MAX_DATA_POINTS:
-                    try:
-                        torque_data[key].pop(0)
-                    except IndexError:
-                        pass
+            # # 控制长度
+            # for key in [ 'steering_angle', 'steering_rate', 'rate_dir']:
+            #     if len(torque_data[key]) > MAX_DATA_POINTS:
+            #         try:
+            #             torque_data[key].pop(0)
+            #         except IndexError:
+            #             pass
                     
 
             if rcv_canfd_num:

@@ -1072,7 +1072,8 @@ if __name__ == "__main__":
         logger.info("Running without GUI...")
         start_main_process(config)
     else:
-        from PySide6.QtWidgets import QApplication
+        from PyQt5.QtWidgets import QApplication
+
         from gui import RealTimePlotWindow
         
         app = QApplication(sys.argv)
