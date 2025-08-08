@@ -626,6 +626,7 @@ class RealTimePlotWindow(QMainWindow):
         self.ax1.set_ylim(-5000, 5000)
         self.ax1.set_xlabel('Steering Angle (degrees)')
         self.ax1.set_ylabel('Torque')
+        self.line1, = self.ax1.plot([], [], 'b-', label='Total Torque')
         self.ax1.legend()
         self.ax1.grid(True)
         
