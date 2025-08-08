@@ -1166,7 +1166,7 @@ def send_messages(chn_handle, ac_api, zcanlib):
             #print("scale_torque", scale_torque)
             logger.info(f"scale_torque: {scale_torque:.6f}")
 
-            hand_torque=scale_torque-G_HAND_FORCE
+            hand_torque=scale_torque-G_HAND_FORCE*0.0714*0.001
 
             record_torque_data(
                 desired_torque=desired_torque,
@@ -1226,7 +1226,7 @@ def send_messages(chn_handle, ac_api, zcanlib):
 
 
 def receive_messages(chn_handle, zcanlib):
-    global G_STEERING_WHEEL_ANGLE_OLD, G_STEERING_WHEEL_ANGLE, G_STEERING_RATE, G_RATE_DIR
+    global G_STEERING_WHEEL_ANGLE_OLD, G_STEERING_WHEEL_ANGLE, G_STEERING_RATE, G_RATE_DIR,G_HAND_FORCE
     try:
         while run_main_flag_event.is_set():
 
@@ -1256,7 +1256,7 @@ def receive_messages(chn_handle, zcanlib):
                     
 
             if rcv_canfd_num:
-                rcv_canfd_msgs, rcv_canfd_num = zcanlib.ReceiveFD(chn_handle, rcv_canfd_num, 1000)
+                rcv_canfd_msgs, rcv_canfd_num = zcanlib.ReceiveFD(chn_handle, rcv_canfd_num, 100)#设置合理的超时shift时间
                 for i in range(rcv_canfd_num):
                     frame = rcv_canfd_msgs[i].frame
                     can_id = frame.can_id
@@ -1357,6 +1357,8 @@ def initialize_can(config, window=None):
 
     # 根据配置选择实际类
     ZCAN = _mock_zcan if not use_real_can else _real_zcan
+
+    
 
     try :
         zcanlib = ZCAN()
@@ -1555,7 +1557,7 @@ def start_main_process(config,window=None):
     # 非 GUI 模式下等待线程结束
     try:
         for t in running_threads:
-            t.join()
+            t.join() # 等待线程结束 阻塞主线程等待所有
     except KeyboardInterrupt:
         #print("Main process interrupted by user.")
         logger.error("Main process interrupted by user.")
