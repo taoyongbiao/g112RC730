@@ -7,50 +7,51 @@ import pyvjoy
 import os
 import math
 from ffb_cal_ori import ForceFeedbackAlgorithm
+# from ffb_cal_0630 import ForceFeedbackAlgorithm
+# from ffb_cal_0624 import ForceFeedbackAlgorithm
+# from ffb_rc import get_ffb_from_game_api,get_ffb_from_algorithm
+
 from ffb_rc import FrameData,FrameInputData,read_vehicle_status_from_rc
-from MockACAPI import MockACAPI as ACAPI
-from loguru import logger
-import ffb_rc
+# from ffb import ForceFeedbackAlgorithm
+# import matplotlib
+# matplotlib.use('TkAgg')
+# import matplotlib.pyplot as plt
 import sys
 import numpy as np
+
 import matplotlib.animation as animation
-import wifi_module
 
-# 从共享数据模块导入
-from shared_state import (
-    torque_data, MAX_DATA_POINTS, G_ROLL_CNT, G_READY_ROLL_CNT, G_RATE_DIR,
-    G_STEERING_RATE, G_STEERING_WHEEL_ANGLE, G_STEERING_WHEEL_ANGLE_OLD,
-    G_THROTTLE, G_BRAKE, G_HAND_FORCE, G_STEERING_CAN_ID, G_STEERING_SBW_CAN_ID,
-    G_THROTTLE_BRAKE_CAN_ID, run_main_flag_event
-)
+from MockACAPI import MockACAPI as ACAPI
 
-# 更新全局变量的引用
-def update_globals():
-    global G_ROLL_CNT, G_READY_ROLL_CNT, G_RATE_DIR
-    global G_STEERING_RATE, G_STEERING_WHEEL_ANGLE, G_STEERING_WHEEL_ANGLE_OLD
-    global G_THROTTLE, G_BRAKE, G_HAND_FORCE
-    
-    G_ROLL_CNT = shared_data.G_ROLL_CNT
-    G_READY_ROLL_CNT = shared_data.G_READY_ROLL_CNT
-    G_RATE_DIR = shared_data.G_RATE_DIR
-    G_STEERING_RATE = shared_data.G_STEERING_RATE
-    G_STEERING_WHEEL_ANGLE = shared_data.G_STEERING_WHEEL_ANGLE
-    G_STEERING_WHEEL_ANGLE_OLD = shared_data.G_STEERING_WHEEL_ANGLE_OLD
-    G_THROTTLE = shared_data.G_THROTTLE
-    G_BRAKE = shared_data.G_BRAKE
-    G_HAND_FORCE = shared_data.G_HAND_FORCE
+from loguru import logger
 
+import ffb_rc
 fRead = None
 fEnd = None
 RC = False
 ac_api=None
+
 fWriteInput = None
+
+
+
+
+
+
+
+from shared_state import run_main_flag_event
+
+import wifi_module
+
+
 main_thread_list = []
+
 
 # 模块级缓存
 _real_zcan = None
 _mock_zcan = None
 _zcan_imported = False
+
 
 def _init_zcan(real_can):
     global _real_zcan, _mock_zcan, _zcan_imported
@@ -58,12 +59,45 @@ def _init_zcan(real_can):
         return
 
     if real_can:
+        # 延迟导入真实 CAN 模块（只有第一次才加载）
+        
         _real_zcan = ZCAN
     else:
+        # 延迟导入模拟 CAN 模块
         from MockZCAN import MockZCAN as MockZCAN
         _mock_zcan = MockZCAN
 
     _zcan_imported = True
+
+
+# 数据缓存
+MAX_DATA_POINTS = 5000 # 显示最近100个点
+torque_data = {
+    # 'time': [],
+    # 'total_torque': [],
+    # 'scale_torque': [],
+    # 'desired_torque': [],
+    # 'damping': [],
+    # 'friction': [],
+
+    # # 新增方向盘相关数据
+    # # 'steering_angle_old': [],
+    # 'steering_angle': [],
+    # 'steering_rate': [],
+    # 'rate_dir': [],
+    # 'lateral_effect':[],
+    # 'suspension_effect':[],
+}
+
+
+'''
+ SBW CRC ROLL CNT
+'''
+G_ROLL_CNT = 0
+G_READY_ROLL_CNT = 0
+G_RATE_DIR = 1
+
+
 
 class ForceFeedbackOutput(ctypes.Structure):
     _fields_ = [
@@ -75,11 +109,34 @@ class ForceFeedbackOutput(ctypes.Structure):
         ("damping", ctypes.c_float)
     ]
 
-# CAN ID (使用共享数据中的定义)
+
+'''
+ Global Variable 
+'''
+G_STEERING_RATE = 0.0
+G_STEERING_WHEEL_ANGLE = 0.0
+G_STEERING_WHEEL_ANGLE_OLD = 0.0
+G_THROTTLE = 0.0
+G_BRAKE = 0.0
+
+G_HAND_FORCE = 0.0
+
+'''
+ CAN ID
+'''
+# G_STEERING_CAN_ID = 0X11F
+G_STEERING_CAN_ID=0x8E
+G_STEERING_SBW_CAN_ID = 0X8E
+# G_STEERING_SBW_CAN_ID = 0X11F
+G_THROTTLE_BRAKE_CAN_ID = 0x342
+
 INVALID_DEVICE_HANDLE = 0
 INVALID_CHANNEL_HANDLE = 0
 
 ZCAN_DEVICE_TYPE = c_uint
+'''
+ Device Type
+'''
 ZCAN_PCI5121 = ZCAN_DEVICE_TYPE(1)
 ZCAN_PCI9810 = ZCAN_DEVICE_TYPE(2)
 ZCAN_USBCAN1 = ZCAN_DEVICE_TYPE(3)
@@ -129,14 +186,25 @@ ZCAN_CLOUD = ZCAN_DEVICE_TYPE(46)
 ZCAN_CANDTU_NET_400 = ZCAN_DEVICE_TYPE(47)
 ZCAN_VIRTUAL_DEVICE = ZCAN_DEVICE_TYPE(99)
 
+'''
+ Interface return status
+'''
 ZCAN_STATUS_ERR = 0
 ZCAN_STATUS_OK = 1
 ZCAN_STATUS_ONLINE = 2
 ZCAN_STATUS_OFFLINE = 3
 ZCAN_STATUS_UNSUPPORTED = 4
 
+'''
+ CAN type
+'''
 ZCAN_TYPE_CAN = c_uint(0)
 ZCAN_TYPE_CANFD = c_uint(1)
+
+'''
+ Device information
+'''
+
 
 class ZCAN_DEVICE_INFO(Structure):
     _fields_ = [("hw_Version", c_ushort),
@@ -201,6 +269,7 @@ class ZCAN_DEVICE_INFO(Structure):
                 break
         return hw_type
 
+
 class _ZCAN_CHANNEL_CAN_INIT_CONFIG(Structure):
     _fields_ = [("acc_code", c_uint),
                 ("acc_mask", c_uint),
@@ -209,6 +278,7 @@ class _ZCAN_CHANNEL_CAN_INIT_CONFIG(Structure):
                 ("timing0", c_ubyte),
                 ("timing1", c_ubyte),
                 ("mode", c_ubyte)]
+
 
 class _ZCAN_CHANNEL_CANFD_INIT_CONFIG(Structure):
     _fields_ = [("acc_code", c_uint),
@@ -221,17 +291,21 @@ class _ZCAN_CHANNEL_CANFD_INIT_CONFIG(Structure):
                 ("pad", c_ushort),
                 ("reserved", c_uint)]
 
+
 class _ZCAN_CHANNEL_INIT_CONFIG(Union):
     _fields_ = [("can", _ZCAN_CHANNEL_CAN_INIT_CONFIG), ("canfd", _ZCAN_CHANNEL_CANFD_INIT_CONFIG)]
+
 
 class ZCAN_CHANNEL_INIT_CONFIG(Structure):
     _fields_ = [("can_type", c_uint),
                 ("config", _ZCAN_CHANNEL_INIT_CONFIG)]
 
+
 class ZCAN_CHANNEL_ERR_INFO(Structure):
     _fields_ = [("error_code", c_uint),
                 ("passive_ErrData", c_ubyte * 3),
                 ("arLost_ErrData", c_ubyte)]
+
 
 class ZCAN_CHANNEL_STATUS(Structure):
     _fields_ = [("errInterrupt", c_ubyte),
@@ -244,6 +318,7 @@ class ZCAN_CHANNEL_STATUS(Structure):
                 ("regTECounter", c_ubyte),
                 ("Reserved", c_ubyte)]
 
+
 class ZCAN_CAN_FRAME(Structure):
     _fields_ = [("can_id", c_uint, 29),
                 ("err", c_uint, 1),
@@ -254,6 +329,7 @@ class ZCAN_CAN_FRAME(Structure):
                 ("__res0", c_ubyte),
                 ("__res1", c_ubyte),
                 ("data", c_ubyte * 8)]
+
 
 class ZCAN_CANFD_FRAME(Structure):
     _fields_ = [("can_id", c_uint, 29),
@@ -268,17 +344,22 @@ class ZCAN_CANFD_FRAME(Structure):
                 ("__res1", c_ubyte),
                 ("data", c_ubyte * 64)]
 
+
 class ZCAN_Transmit_Data(Structure):
     _fields_ = [("frame", ZCAN_CAN_FRAME), ("transmit_type", c_uint)]
+
 
 class ZCAN_Receive_Data(Structure):
     _fields_ = [("frame", ZCAN_CAN_FRAME), ("timestamp", c_ulonglong)]
 
+
 class ZCAN_TransmitFD_Data(Structure):
     _fields_ = [("frame", ZCAN_CANFD_FRAME), ("transmit_type", c_uint)]
 
+
 class ZCAN_ReceiveFD_Data(Structure):
     _fields_ = [("frame", ZCAN_CANFD_FRAME), ("timestamp", c_ulonglong)]
+
 
 class ZCAN_AUTO_TRANSMIT_OBJ(Structure):
     _fields_ = [("enable", c_ushort),
@@ -286,41 +367,50 @@ class ZCAN_AUTO_TRANSMIT_OBJ(Structure):
                 ("interval", c_uint),
                 ("obj", ZCAN_Transmit_Data)]
 
+
 class ZCANFD_AUTO_TRANSMIT_OBJ(Structure):
     _fields_ = [("enable", c_ushort),
                 ("index", c_ushort),
                 ("interval", c_uint),
                 ("obj", ZCAN_TransmitFD_Data)]
 
+
 class IProperty(Structure):
     _fields_ = [("SetValue", c_void_p),
                 ("GetValue", c_void_p),
                 ("GetPropertys", c_void_p)]
 
+
 class ZCAN(object):
     def __init__(self):
         if platform.system() == "Windows":
             try:
+                # self.__dll = windll.LoadLibrary("C:/Users/tao.yongbiao/Desktop/新建文件夹/g112RC/zlgcan.dll")
                 self.__dll = windll.LoadLibrary(os.path.join(os.path.dirname(__file__), "zlgcan.dll"))
                 if not self.__dll:
                     raise FileNotFoundError("LoadLibrary 返回空句柄")
             except Exception as e:
+                #print(f"[ERROR] 加载 zlgcan.dll 失败，请确认文件是否存在。错误信息: {e}")
                 logger.error(f"[ERROR] 加载 zlgcan.dll 失败，请确认文件是否存在。错误信息: {e}")
                 self.__dll = None
         else:
+            #print("No support now!")
             logger.error("No support now!")
 
     def OpenDevice(self, device_type, device_index, reserved):
         try:
             return self.__dll.ZCAN_OpenDevice(device_type, device_index, reserved)
         except:
+            #print("Exception on OpenDevice!")
             logger.error("Exception on OpenDevice!")
+            
             raise
 
     def CloseDevice(self, device_handle):
         try:
             return self.__dll.ZCAN_CloseDevice(device_handle)
         except:
+            #print("Exception on CloseDevice!")
             logger.error("Exception on CloseDevice!")
             raise
 
@@ -330,6 +420,7 @@ class ZCAN(object):
             ret = self.__dll.ZCAN_GetDeviceInf(device_handle, byref(info))
             return info if ret == ZCAN_STATUS_OK else None
         except:
+            #print("Exception on ZCAN_GetDeviceInf")
             logger.error("Exception on ZCAN_GetDeviceInf")
             raise
 
@@ -337,6 +428,7 @@ class ZCAN(object):
         try:
             return self.__dll.ZCAN_IsDeviceOnLine(device_handle)
         except:
+            #print("Exception on ZCAN_ZCAN_IsDeviceOnLine!")
             logger.error("Exception on ZCAN_ZCAN_IsDeviceOnLine!")
             raise
 
@@ -344,14 +436,17 @@ class ZCAN(object):
         try:
             return self.__dll.ZCAN_InitCAN(device_handle, can_index, byref(init_config))
         except:
+            #print("Exception on ZCAN_InitCAN!")
             logger.error("Exception on ZCAN_InitCAN!")
             raise
 
     def StartCAN(self, chn_handle):
         try:
+            #print("ZCAN_StartCAN 真实can 启动")
             logger.info("ZCAN_StartCAN 真实can 启动")
             return self.__dll.ZCAN_StartCAN(chn_handle)
         except:
+            #print("Exception on ZCAN_StartCAN!")
             logger.error("Exception on ZCAN_StartCAN!")
             raise
 
@@ -359,6 +454,7 @@ class ZCAN(object):
         try:
             return self.__dll.ZCAN_ResetCAN(chn_handle)
         except:
+            #print("Exception on ZCAN_ResetCAN!")
             logger.error("Exception on ZCAN_ResetCAN!")
             raise
 
@@ -366,6 +462,7 @@ class ZCAN(object):
         try:
             return self.__dll.ZCAN_ClearBuffer(chn_handle)
         except:
+            #print("Exception on ZCAN_ClearBuffer!")
             logger.error("Exception on ZCAN_ClearBuffer!")
             raise
 
@@ -375,6 +472,7 @@ class ZCAN(object):
             ret = self.__dll.ZCAN_ReadChannelErrInfo(chn_handle, byref(ErrInfo))
             return ErrInfo if ret == ZCAN_STATUS_OK else None
         except:
+            #print("Exception on ZCAN_ReadChannelErrInfo!")
             logger.error("Exception on ZCAN_ReadChannelErrInfo!")
             raise
 
@@ -384,6 +482,7 @@ class ZCAN(object):
             ret = self.__dll.ZCAN_ReadChannelStatus(chn_handle, byref(status))
             return status if ret == ZCAN_STATUS_OK else None
         except:
+            #print("Exception on ZCAN_ReadChannelStatus!")
             logger.error("Exception on ZCAN_ReadChannelStatus!")
             raise
 
@@ -391,6 +490,7 @@ class ZCAN(object):
         try:
             return self.__dll.ZCAN_GetReceiveNum(chn_handle, can_type)
         except:
+            #print("Exception on ZCAN_GetReceiveNum!")
             logger.error("Exception on ZCAN_GetReceiveNum!")
             raise
 
@@ -398,6 +498,7 @@ class ZCAN(object):
         try:
             return self.__dll.ZCAN_Transmit(chn_handle, byref(std_msg), len)
         except:
+            #print("Exception on ZCAN_Transmit!")
             logger.error("Exception on ZCAN_Transmit!")
             raise
 
@@ -407,6 +508,7 @@ class ZCAN(object):
             ret = self.__dll.ZCAN_Receive(chn_handle, byref(rcv_can_msgs), rcv_num, wait_time)
             return rcv_can_msgs, ret
         except:
+            #print("Exception on ZCAN_Receive!")
             logger.error("Exception on ZCAN_Receive!")
             raise
 
@@ -414,6 +516,7 @@ class ZCAN(object):
         try:
             return self.__dll.ZCAN_TransmitFD(chn_handle, byref(fd_msg), len)
         except:
+            #print("Exception on ZCAN_TransmitFD!")
             logger.error("Exception on ZCAN_TransmitFD!")
             raise
 
@@ -423,6 +526,7 @@ class ZCAN(object):
             ret = self.__dll.ZCAN_ReceiveFD(chn_handle, byref(rcv_canfd_msgs), rcv_num, wait_time)
             return rcv_canfd_msgs, ret
         except:
+            #print("Exception on ZCAN_ReceiveFD!")
             logger.error("Exception on ZCAN_ReceiveFD!")
             raise
 
@@ -431,6 +535,7 @@ class ZCAN(object):
             self.__dll.GetIProperty.restype = POINTER(IProperty)
             return self.__dll.GetIProperty(device_handle)
         except:
+            #print("Exception on ZCAN_GetIProperty!")
             logger.error("Exception on ZCAN_GetIProperty!")
             raise
 
@@ -439,6 +544,7 @@ class ZCAN(object):
             func = CFUNCTYPE(c_uint, c_char_p, c_char_p)(iproperty.contents.SetValue)
             return func(c_char_p(path.encode("utf-8")), c_char_p(value.encode("utf-8")))
         except:
+            #print("Exception on IProperty SetValue")
             logger.error("Exception on IProperty SetValue")
             raise
 
@@ -447,6 +553,7 @@ class ZCAN(object):
             func = CFUNCTYPE(c_char_p, c_char_p)(iproperty.contents.GetValue)
             return func(c_char_p(path.encode))
         except:
+            #print("Exception on IProperty GetValue")
             logger.error("Exception on IProperty GetValue")
             raise
 
@@ -454,8 +561,17 @@ class ZCAN(object):
         try:
             return self.__dll.ReleaseIProperty(iproperty)
         except:
+            #print("Exception on ZCAN_ReleaseIProperty!")
             logger.error("Exception on ZCAN_ReleaseIProperty!")
             raise
+
+
+###############################################################################
+
+
+'''
+ENCODE AND DECODE
+'''
 
 def crc16(data):
     crc = 0xFFFF
@@ -469,10 +585,12 @@ def crc16(data):
             crc &= 0xFFFF
     return crc
 
+
 def crc8(data):
     crc = sum(data) % 256
     crc = 255 - crc
     return crc
+
 
 def encode_sbw_ready_frame():
     global G_READY_ROLL_CNT
@@ -485,19 +603,55 @@ def encode_sbw_ready_frame():
 
     return data_frame
 
+# #将输入的扭矩值编码为一个具有校验、计数和固定格式的64字节数据帧，
+# def encode_sbw_ffb_frame(torque):
+#     global G_ROLL_CNT
+
+#     data_frame = bytearray(64)
+
+#     torque = int((torque + 20) * 50)
+
+#     torque_bin = format(torque, '013b')
+
+#     data_frame[0] = 0x20
+#     data_frame[1] = 0x1C
+#     data_frame[2] = 0x01
+#     data_frame[3] = int(torque_bin[-4:], 2) << 4
+#     data_frame[4] = int(torque_bin[1:-4], 2)
+
+#     data_frame[5] = 0x4A
+#     data_frame[6] = 0x40  #high 0000 1001 0x09#low 0000 0101 0x05
+
+#     G_ROLL_CNT = (G_ROLL_CNT + 1) % 0xFFFF
+
+#     data_frame[60] = G_ROLL_CNT & 0xFF
+#     data_frame[61] = (G_ROLL_CNT >> 8) & 0xFF
+
+#     crc_data = crc16(data_frame[:-2])
+
+#     data_frame[62] = crc_data & 0xFF
+#     data_frame[63] = (crc_data >> 8) & 0xFF
+
+#     return data_frame
+
+
+
 def encode_sbw_ffb_frame(torque=None):
     global G_ROLL_CNT
 
     data_frame = bytearray(64)
 
+    # 如果没有提供扭矩值，则设置为0
     if torque is None:
         torque = 0
 
     torque = int((torque + 20) * 50)
+
     torque_bin = format(torque, '013b')
 
     data_frame[0] = 0x20
     data_frame[1] = 0x1C
+    # 根据扭矩值设置data_frame[2]
     if torque == 0:
         data_frame[2] = 0x00
     else:
@@ -506,7 +660,7 @@ def encode_sbw_ffb_frame(torque=None):
     data_frame[4] = int(torque_bin[1:-4], 2)
 
     data_frame[5] = 0x4A
-    data_frame[6] = 0x40
+    data_frame[6] = 0x40  #high 0000 1001 0x09#low 0000 0101 0x05
 
     G_ROLL_CNT = (G_ROLL_CNT + 1) % 0xFFFF
 
@@ -520,10 +674,13 @@ def encode_sbw_ffb_frame(torque=None):
 
     return data_frame
 
+
 def limit_and_encode_angle(angle: float, limit: float) -> int:
+    # pitch 3.5 roll4
     limited = min(abs(angle), limit)
     signed_limited = limited if angle >= 0 else -limited
     return int((signed_limited + 1) * 90000)
+
 
 def throttle_brake_response(vehicle_type, throttle, brake, speed):
     is_u7 = vehicle_type == 'U7'
@@ -547,11 +704,17 @@ def throttle_brake_response(vehicle_type, throttle, brake, speed):
 
     return pitch_add * sign
 
+#该函数 encode_roll_pitch_frame 的主要功能是根据车辆状态和控制输入计算车身姿态（roll 和 pitch）的模拟数据，并将其编码为一个8字节的数据帧返回。
 def encode_roll_pitch_frame(vehicle_type, throttle, brake, game_roll, game_pitch, speed, steering_wheel_angle,
                             steering_wheel_angle_old, steering_wheel_rate):
     if speed < 0.5:
         game_roll = 0
         game_pitch = 0
+
+    # if game_roll > 0.04:
+    #     game_roll = 0.04
+    # if game_pitch > 0.04:
+    #     game_pitch = 0.04
 
     roll_add = turning_response(vehicle_type,steering_wheel_angle, steering_wheel_angle_old, steering_wheel_rate, speed)
     pitch_add = throttle_brake_response(vehicle_type,throttle, brake, speed)
@@ -568,12 +731,15 @@ def encode_roll_pitch_frame(vehicle_type, throttle, brake, game_roll, game_pitch
         game_pitch = min(abs(game_pitch), 0.04)
 
     pitch_real = game_pitch * 90
+#TODO: 需要明确roll_total_game和pitch_total_game
     roll_total_game = roll_add + game_roll
     pitch_total_game = game_pitch + pitch_add
 
     roll_raw_real = game_roll * 0.5 * 90
     roll_add_real = roll_total_game * 90
 
+
+#TODO: 需要明确roll_total_game和pitch_total_game
     roll_int = limit_and_encode_angle(pitch_total_game, roll_limit)
     pitch_int = limit_and_encode_angle(roll_total_game, pitch_limit)
 
@@ -595,6 +761,7 @@ def encode_roll_pitch_frame(vehicle_type, throttle, brake, game_roll, game_pitch
 
     return data_frame, roll_raw_real, roll_add_real, pitch_real
 
+
 def encode_switch_vr_frame(state):
     switch_vr_frame = bytearray(8)
     if state in (0x1, 0x2, 0x3):
@@ -602,6 +769,7 @@ def encode_switch_vr_frame(state):
         switch_vr_frame[1] = state
 
     return switch_vr_frame
+
 
 def decode_steering_wheel_angle_frame(can_id, frame_data):
     if isinstance(frame_data, str):
@@ -617,30 +785,63 @@ def decode_steering_wheel_angle_frame(can_id, frame_data):
     if angle_raw > 0x7FFF:
         angle_raw = (~angle_raw & 0xFFFF) + 1
         steering_wheel_angle = angle_raw / 10.0
+
     else:
         steering_wheel_angle = -angle_raw / 10.0
 
     return steering_wheel_angle, steering_rate
 
 def decode_hand_force_data(frame_data):
+    """
+    从CAN帧数据中提取手力数据
+    手力数据存储在第13字节(索引12)和第14字节(索引13)中
+    使用小端序格式(低字节在前，高字节在后)
+    
+    参数:
+        frame_data: CAN帧数据字节数组
+    
+    返回:
+        hand_force: 手力数据(有符号16位整数)，单位可能需要根据实际协议转换
+    """
+    # 检查数据长度是否足够
     if len(frame_data) < 14:
         raise ValueError("CAN帧数据长度不足，无法提取手力数据")
     
-    force_raw = (frame_data[13] << 8) | frame_data[12]
+    # 提取16位数据 (小端序: 低字节在前，高字节在后)
+    force_raw = (frame_data[13] << 8) | frame_data[12]  # frame_data[13]是高字节，frame_data[12]是低字节
     
-    if force_raw > 0x7FFF:
+    # 处理有符号16位整数 (补码表示法)
+    if force_raw > 0x7FFF:  # 如果最高位为1，表示负数
+        # 转换补码为负数
         hand_force = force_raw - 0x10000
     else:
         hand_force = force_raw
     
     return hand_force
 
+
 def turning_response(vehicle_type, steering_wheel_angle, steering_wheel_angle_old, steering_wheel_rate, speed):
+    """
+    根据方向盘转向速率和车速计算 roll 的附加效果，用于模拟转向反馈。
+    
+    参数:
+    - vehicle_type (str): 车辆类型，如 'U7'，用于差异化处理
+    - steering_wheel_angle (float): 当前方向盘角度
+    - steering_wheel_angle_old (float): 上一次方向盘角度
+    - steering_wheel_rate (float): 方向盘转速
+    - speed (float): 当前车速
+
+    返回:
+    - roll_add (float): 计算出的 roll 附加值
+    """
+    # 将方向盘转速放大 6 倍以增强反馈效果
     steering_wheel_rate = steering_wheel_rate * 6
 
+    # 如果方向盘转速过小或速度过低，返回 0.0（无反馈）
     if abs(steering_wheel_rate) < 50 or speed < 0.5:
         return 0.0
 
+    # 根据车速设置速度因子
     if speed > 200:
         speed_factor = 0.6
     elif speed > 120:
@@ -650,19 +851,25 @@ def turning_response(vehicle_type, steering_wheel_angle, steering_wheel_angle_ol
     elif speed > 0.5:
         speed_factor = 0.1
     else:
-        speed_factor = 1
+        speed_factor = 1  # 默认值（理论上不会走到这里）
 
+    # 判断方向盘角度变化方向
     delta_angle = steering_wheel_angle_old - steering_wheel_angle
-    direction = -1 if delta_angle > 0 else 1
+    direction = -1 if delta_angle > 0 else 1  # 方向决定反馈正负
 
+    # 根据车型设置最大游戏反馈系数
     if vehicle_type == 'U7':
-        max_game_data = 0.02
+        max_game_data = 0.02  # U7 车型反馈较弱
     else:
-        max_game_data = 0.09
+        max_game_data = 0.09  # 其他车型反馈较强
 
+    # 对方向盘速率进行微调（缩放）
     steering_wheel_rate = steering_wheel_rate * 0.0009
+
+    # 计算最终的 roll 附加值
     roll_add = direction * speed_factor * max_game_data * steering_wheel_rate
     return roll_add
+
 
 def decode_throttle_brake_frame(frame_data):
     if isinstance(frame_data, str):
@@ -672,23 +879,27 @@ def decode_throttle_brake_frame(frame_data):
     brake = int(frame_data[1])
     return throttle, brake
 
+
 def can_start(zcanlib, device_handle, chn):
     ip = zcanlib.GetIProperty(device_handle)
     ret = zcanlib.SetValue(ip, str(chn) + "/clock", "60000000")
     if ret != ZCAN_STATUS_OK:
+        #print("Set CH%d CANFD clock failed!" % (chn))
         logger.error("Set CH%d CANFD clock failed!" % (chn))
     ret = zcanlib.SetValue(ip, str(chn) + "/canfd_standard", "0")
     if ret != ZCAN_STATUS_OK:
+        #print("Set CH%d CANFD standard failed!" % (chn))
         logger.error("Set CH%d CANFD standard failed!" % (chn))
     ret = zcanlib.SetValue(ip, str(chn) + "/initenal_resistance", "1")
     if ret != ZCAN_STATUS_OK:
+        #print("Open CH%d resistance failed!" % (chn))
         logger.error("Open CH%d resistance failed!" % (chn))
     zcanlib.ReleaseIProperty(ip)
 
     chn_init_cfg = ZCAN_CHANNEL_INIT_CONFIG()
     chn_init_cfg.can_type = ZCAN_TYPE_CANFD
-    chn_init_cfg.config.canfd.abit_timing = 104286
-    chn_init_cfg.config.canfd.dbit_timing = 4260362
+    chn_init_cfg.config.canfd.abit_timing = 104286  # 101166 #1Mbps仲裁位速率
+    chn_init_cfg.config.canfd.dbit_timing = 4260362  # 101166 #1Mbps数据位速率
     chn_init_cfg.config.canfd.mode = 0
     chn_handle = zcanlib.InitCAN(device_handle, chn, chn_init_cfg)
     if chn_handle is None:
@@ -696,32 +907,39 @@ def can_start(zcanlib, device_handle, chn):
     zcanlib.StartCAN(chn_handle)
     return chn_handle
 
+#记录扭矩数据
 def record_torque_data(**kwargs):
+
+    # 处理动态传入的额外参数
     for key, value in kwargs.items():
         if key not in torque_data:
             torque_data[key] = []
         torque_data[key].append(value)
 
+    # 添加关键的转向数据（如果未提供）
     steering_fields = {
         'steering_angle': G_STEERING_WHEEL_ANGLE,
         'steering_rate': G_STEERING_RATE,
         'rate_dir': G_RATE_DIR
     }    
     for field, default_value in steering_fields.items():
-        if field not in kwargs:
+        if field not in kwargs:  # 未显式提供时使用默认值
             if field not in torque_data:
                 torque_data[field] = []
             torque_data[field].append(default_value)
 
+    # 控制最大数据量（使用任意一个字段的长度来判断，因为所有字段应该保持同步增长）
+    # 找到第一个非空字段来检查长度
     for key in torque_data:
-        if torque_data[key]:
+        if torque_data[key]:  # 找到第一个非空字段
             if len(torque_data[key]) > MAX_DATA_POINTS:
+                # 当超过最大点数时，移除所有字段的最旧数据点
                 for k in torque_data:
                     if torque_data[k]:
                         torque_data[k].pop(0)
-            break
-
-def read_vehicle_status(ac_api):
+            break  # 只需要检查一个字段即可
+#读取车辆状态
+def  read_vehicle_status(ac_api):
     if ac_api:
         roll = ac_api.AC_GetRoll()
         pitch = ac_api.AC_GetPitch()
@@ -733,81 +951,153 @@ def read_vehicle_status(ac_api):
         return roll, pitch, speed, wheel_slip, acc_g, suspension_travel, local_angular_vel
     else:
         return 0.0, 0.0, 0.0, None, None, None, None
-
 def send_messages(chn_handle, ac_api, zcanlib):
+
+    #初始化CAN FD消息结构和ID列表
     transmit_canfd_num = 7
+    # transmit_canfd_num = 6
     canfd_msgs = (ZCAN_TransmitFD_Data * transmit_canfd_num)()
 
     can_ids = [0x0C3, 0x0C3, 0x0C3, 0x29F, 0x29F, 0x29F, 0x341]
+    # can_ids = [0x0C3, 0x0C3, 0x0C3, 0x4EF, 0x4EF, 0x4EF, 0x341] #最新
+    # can_ids = [0x0C3, 0x0C3, 0x0C3, 0x29F, 0x29F, 0x29F]
 
     for i, can_id in enumerate(can_ids):
-        msg = canfd_msgs[i]
+        # 遍历 canfd_msgs 数组，初始化每个 CAN FD 消息的属性
+        msg = canfd_msgs[i]  # 获取当前 CAN FD 消息对象
+
+        # 设置消息的发送类型为正常发送（1 表示正常发送，0 表示保留或其他用途）
         msg.transmit_type = 1
+
+        # 设置帧格式标志：
+        # 0 表示标准帧（11位CAN ID），1 表示扩展帧（29位CAN ID）
         msg.frame.eff = 0
+
+        # 设置远程帧标志：
+        # 0 表示数据帧，1 表示请求帧（Remote Transmission Request）
         msg.frame.rtr = 0
+
+        # 设置比特率切换标志：
+        # 0 表示不切换比特率，1 表示使用更高的数据段比特率（CAN FD 特性）
         msg.frame.brs = 0
+
+        # 设置数据长度码（DLC）：
+        # 表示数据段长度为 8 字节（CAN FD 支持最大 64 字节）
         msg.frame.len = 8
+
+        # 设置 CAN 帧 ID：
+        # 从 can_ids 列表中取出当前索引的 CAN ID，标识该帧的用途或来源
         msg.frame.can_id = can_id
 
+    start_time = time.time()  # 记录开始时间
+
+
     try:
+
         cnt = 0
         while run_main_flag_event.is_set():
+
             roll = 0.0
             pitch = 0.0
             speed = 0.0
 
+            
             if RC:
                 roll, pitch, speed,suspensionData= read_vehicle_status_from_rc()
             else:
                 roll, pitch, speed, wheel_slip, acc_g, suspension_travel, local_angular_vel = read_vehicle_status(ac_api)   
 
+            # print(f"++++++++++++++++++++ acc_g: {acc_g.accg[1]}")
+
+            # 编码滚转和俯仰数据帧
             roll_pitch_frame_data, roll_raw_real, roll_add_real, pitch_real = encode_roll_pitch_frame('U9', G_THROTTLE,
                                                             G_BRAKE, roll,
                                                             pitch, speed,
                                                             G_STEERING_WHEEL_ANGLE,
                                                             G_STEERING_WHEEL_ANGLE_OLD,
                                                             G_STEERING_RATE)
-            
+            # 将编码好的车身姿态数据（roll和pitch）填充到前3个CAN FD消息的数据域中
             for i in range(len(roll_pitch_frame_data)):
-                for msg in canfd_msgs[:3]:
-                    msg.frame.data[i] = roll_pitch_frame_data[i]
+                for msg in canfd_msgs[:3]:  # 遍历前三个消息对象
+                    msg.frame.data[i] = roll_pitch_frame_data[i]  # 填充数据到每个消息帧的对应位置
 
+            # 计数器 cnt 自增1，用于控制某些操作的频率
             cnt += 1
 
+            # 每当 cnt 达到5时，执行一次特定操作（发送VR模式切换帧）
             if cnt == 5:
-                cnt = 0
+                cnt = 0  # 重置计数器
+                
+                # 调用 encode_switch_vr_frame 函数生成一个VR模式切换帧，参数0x2表示某种特定状态
                 switch_vr_frame_data = encode_switch_vr_frame(0x2)
                 
+                # 将VR模式切换帧的数据填充到第4至第6个CAN FD消息的数据域中
                 for i in range(len(switch_vr_frame_data)):
-                    for msg in canfd_msgs[3:-1]:
+                    for msg in canfd_msgs[3:-1]:  # 遍历第4到第6个消息对象（索引3到-1前一个）
                         msg.frame.data[i] = switch_vr_frame_data[i]
 
             ready_frame = encode_sbw_ready_frame()
             for i in range(len(ready_frame)):
                 canfd_msgs[6].frame.data[i] = ready_frame[i]
-                
+            #修改 在没有can时也能启用
             if chn_handle is not None:
                 roll_pitch_steer_ready_ret = zcanlib.TransmitFD(chn_handle, canfd_msgs, transmit_canfd_num)
+                #print("roll,pitch", roll_pitch_steer_ready_ret)
                 logger.info("roll,pitch", roll_pitch_steer_ready_ret)
 
+
+
+
+
+
+            #从新函数得到数据
             ffb=ForceFeedbackAlgorithm()
+                
             desired_torque=ffb.get_tanh_torque(speed,G_STEERING_WHEEL_ANGLE)
+            # desired_torque = ffb.get_tanh_torque(speed, local_angular_vel.VehAngVel[2])
+
+            # 0630函数异常影响力矩输出
 
             lateral_effect = ffb.get_lateral_effect(
                 speed,
-                acc_g,
+                acc_g,  # 提取数组部分
                 local_angular_vel,
                 wheel_slip.slip
             )
             suspension_effect=ffb.get_suspension_effect(speed, suspension_travel)
 
+            # friction, damping = ffb.get_friction(ctypes.c_float(G_STEERING_WHEEL_ANGLE), ctypes.c_float(G_STEERING_RATE), speed)
             friction, damping = ffb.get_friction(ctypes.c_float(G_STEERING_WHEEL_ANGLE),
                                                  ctypes.c_float(G_STEERING_RATE))
             total_torque = desired_torque - damping - friction+lateral_effect+suspension_effect
 
+            
+
             logger.info(f"desired_torque: {desired_torque:.2f}, damping: {damping:.2f}, friction: {friction:.2f}, total: {total_torque:.2f}")
 
-            scale_torque = total_torque * 0.001 * 0.05 * -1
+            scale_torque = total_torque * 0.001 * 0.05 * -1  # 54330.05重 #另一台u9是0.06
+    
+            # if config.USE_GAME_FFB_SOURCE:
+            #     result, error = get_ffb_from_game_api(g112RC_api, G_STEERING_WHEEL_ANGLE, ctypes.c_float(G_STEERING_RATE))
+            # else:
+            #     result, error = get_ffb_from_algorithm(speed, G_STEERING_WHEEL_ANGLE, ctypes.c_float(G_STEERING_RATE))
+
+            # if result:
+            #     desired_torque = result['desired_torque']
+            #     damping = result['damping']
+            #     friction = result['friction']
+            #     total_torque = result['total_torque']
+            #     scale_torque = result['scale_torque']
+            # else:
+            #     print(f"[ERROR] {'Game API' if config.USE_GAME_FFB_SOURCE else 'Algorithm'} FFB 获取失败: {error}")
+            #     desired_torque = damping = friction = total_torque = scale_torque = 0.0
+            
+            
+             
+
+
+
+            #print("scale_torque", scale_torque)
             logger.info(f"scale_torque: {scale_torque:.6f}")
 
             hand_torque=scale_torque-G_HAND_FORCE*0.0714*0.001
@@ -820,55 +1110,92 @@ def send_messages(chn_handle, ac_api, zcanlib):
                 scale_torque=scale_torque,
                 lateral_effect=lateral_effect,
                 suspension_effect=suspension_effect,
+                # 可以轻松添加新字段
                 hand_force=G_HAND_FORCE,
                 hand_torque=hand_torque
+                # 其他自定义字段...
             )
 
+            # ffb_frame_data = encode_sbw_ffb_frame(scale_torque)
             ffb_frame_data = encode_sbw_ffb_frame(hand_torque)
 
             steer_canfd_msgs = ZCAN_TransmitFD_Data()
+
+            # 设置 CAN FD 消息的发送类型为正常发送（transmit_type=1）
             steer_canfd_msgs.transmit_type = 1
+
+            # frame.eff: 帧格式标志，0 表示标准帧（11位ID），1 表示扩展帧（29位ID）
             steer_canfd_msgs.frame.eff = 0
+
+            # frame.rtr: 远程帧标志，0 表示数据帧，1 表示请求帧（Remote Transmission Request）
             steer_canfd_msgs.frame.rtr = 0
+
+            # frame.brs: 比特率切换标志，0 表示不切换比特率，1 表示使用更高的数据段比特率（CAN FD 特性）
             steer_canfd_msgs.frame.brs = 0
+
+            # frame.len: 数据长度码（DLC），表示数据段长度为 64 字节（CAN FD 最大支持 64 字节）
             steer_canfd_msgs.frame.len = 64
+
+            # frame.can_id: 设置 CAN 帧 ID 为 0x57（十进制 87），用于标识方向盘力反馈数据
             steer_canfd_msgs.frame.can_id = 0x57
+            # steer_canfd_msgs.frame.can_id = 0x0C3
 
             for i in range(len(ffb_frame_data)):
                 steer_canfd_msgs.frame.data[i] = ffb_frame_data[i]
 
+            # 修改 在没有can时也能启用
             if chn_handle is not None:
                 ret_steer = zcanlib.TransmitFD(chn_handle, steer_canfd_msgs, 1)
+                #print("steer", ret_steer)
                 logger.debug("steer", ret_steer)
 
             time.sleep(0.1)
+            # time.sleep(0.005)
 
     except KeyboardInterrupt:
+        #print("Send interrupted by user")
         logger.error("Send interrupted by user")
+    # finally:
+    #     ac_api.AC_Close()
+
 
 def receive_messages(chn_handle, zcanlib):
     global G_STEERING_WHEEL_ANGLE_OLD, G_STEERING_WHEEL_ANGLE, G_STEERING_RATE, G_RATE_DIR,G_HAND_FORCE
     try:
         while run_main_flag_event.is_set():
-            rcv_canfd_num = zcanlib.GetReceiveNum(chn_handle, ZCAN_TYPE_CANFD)
 
+
+            # 油门 0630屏蔽固定油门踏板
+            # brake = 0
+            # throttle = 100
+            # pyvjoy.VJoyDevice(1).set_axis(pyvjoy.HID_USAGE_Y, int(brake * 3 / 100 * 32767))
+            # pyvjoy.VJoyDevice(1).set_axis(pyvjoy.HID_USAGE_X, int(throttle / 100 * 32767))
+            # rcv_num = zcanlib.GetReceiveNum(chn_handle, ZCAN_TYPE_CAN)
+
+            rcv_canfd_num = zcanlib.GetReceiveNum(chn_handle, ZCAN_TYPE_CANFD) #获取当前帧队列长度
+
+            # 在 while 循环中更新
+            # torque_data['steering_angle_old'].append(G_STEERING_WHEEL_ANGLE_OLD)
             torque_data['steering_angle'].append(G_STEERING_WHEEL_ANGLE)
             torque_data['steering_rate'].append(G_STEERING_RATE)
             torque_data['rate_dir'].append(G_RATE_DIR)
 
+            # 控制长度
             for key in [ 'steering_angle', 'steering_rate', 'rate_dir']:
                 if len(torque_data[key]) > MAX_DATA_POINTS:
                     try:
                         torque_data[key].pop(0)
                     except IndexError:
                         pass
+                    
 
             if rcv_canfd_num:
-                rcv_canfd_msgs, rcv_canfd_num = zcanlib.ReceiveFD(chn_handle, rcv_canfd_num, 100)
+                rcv_canfd_msgs, rcv_canfd_num = zcanlib.ReceiveFD(chn_handle, rcv_canfd_num, 100)#设置合理的超时shift时间
                 for i in range(rcv_canfd_num):
                     frame = rcv_canfd_msgs[i].frame
                     can_id = frame.can_id
                     data = frame.data
+
 
                     if can_id == G_STEERING_SBW_CAN_ID:
                         G_STEERING_WHEEL_ANGLE_OLD = G_STEERING_WHEEL_ANGLE
@@ -876,19 +1203,29 @@ def receive_messages(chn_handle, zcanlib):
                         steering_angle, G_STEERING_RATE = decode_steering_wheel_angle_frame(can_id, data)
                         steering_wheel_factor = 1.6
                         G_STEERING_WHEEL_ANGLE = steering_angle * steering_wheel_factor
+                        #print(f"G_STEERING_WHEEL_ANGLE_OLD: {G_STEERING_WHEEL_ANGLE_OLD}")
                         logger.debug(f"G_STEERING_WHEEL_ANGLE_OLD: {G_STEERING_WHEEL_ANGLE_OLD}")
+                        #print(f"G_STEERING_WHEEL_ANGLE: {G_STEERING_WHEEL_ANGLE}")
                         logger.debug(f"G_STEERING_WHEEL_ANGLE: {G_STEERING_WHEEL_ANGLE}")
                         delta_angle = G_STEERING_WHEEL_ANGLE_OLD - G_STEERING_WHEEL_ANGLE
                         G_RATE_DIR = 1 if delta_angle > 0 else -1
+                        #print(f"G_RATE_DIR: {G_RATE_DIR}")
                         logger.debug(f"G_RATE_DIR: {G_RATE_DIR}")
 
                         G_STEERING_RATE = G_STEERING_RATE * G_RATE_DIR
-                        G_HAND_FORCE = decode_hand_force_data(data)
+
+                        G_HAND_FORCE = decode_hand_force_data(data) #提取手力矩数据
+
+
+
+
 
                         if RC:
                             rc_inputdata = FrameInputData()
                             rc_inputdata.steer = steering_angle / 360
+                            #print(f"rc_inputdata.steer: {rc_inputdata.steer}")
                             logger.debug(f"rc_inputdata.steer: {rc_inputdata.steer}") 
+                             
                             fWriteInput(rc_inputdata)
                         else:
                             pyvjoy.VJoyDevice(1).set_axis(pyvjoy.HID_USAGE_Z,
@@ -897,12 +1234,17 @@ def receive_messages(chn_handle, zcanlib):
 
                     if can_id == G_THROTTLE_BRAKE_CAN_ID:
                         throttle, brake = decode_throttle_brake_frame(data)
+                        # brake = 0
+                        # throttle = 200
+                        #print(f"throttle:{throttle}    brake:{brake}\n")
                         logger.debug(f"throttle:{throttle}    brake:{brake}\n")
                         if RC:
                             rc_inputdata = FrameInputData()
                             rc_inputdata.throttle = throttle/ 100
                             rc_inputdata.brake = brake/ 100
+                            #print(f"rc_inputdata.throttle:{rc_inputdata.throttle}\n")
                             logger.debug(f"rc_inputdata.throttle:{rc_inputdata.throttle}\n")
+                            #print(f"rc_inputdata.brake:{rc_inputdata.brake}\n")
                             logger.debug(f"rc_inputdata.brake:{rc_inputdata.brake}\n")
                             fWriteInput(rc_inputdata)
                         else:
@@ -910,8 +1252,16 @@ def receive_messages(chn_handle, zcanlib):
                             pyvjoy.VJoyDevice(1).set_axis(pyvjoy.HID_USAGE_X, int(throttle / 100 * 32767))
             else:
                 pass
+                # print("wait")
+                # break
     except KeyboardInterrupt:
+        #print("Rec interrupted by user")
         logger.error("Rec interrupted by user")
+
+
+
+
+
 
 def update_g_vars(angle, rate, direction):
     global G_STEERING_WHEEL_ANGLE_OLD, G_STEERING_WHEEL_ANGLE, G_STEERING_RATE, G_RATE_DIR
@@ -921,6 +1271,7 @@ def update_g_vars(angle, rate, direction):
     G_STEERING_RATE = rate
     G_RATE_DIR = direction
 
+    # torque_data['steering_angle_old'].append(G_STEERING_WHEEL_ANGLE_OLD)
     torque_data['steering_angle'].append(G_STEERING_WHEEL_ANGLE)
     torque_data['steering_rate'].append(G_STEERING_RATE)
     torque_data['rate_dir'].append(G_RATE_DIR)
@@ -929,49 +1280,70 @@ def update_g_vars(angle, rate, direction):
         if len(torque_data[key]) > MAX_DATA_POINTS:
             torque_data[key].pop(0)
 
+
 def initialize_can(config, window=None):
+
+
     use_real_can = config.get('USE_REAL_CAN', False)
+
+    # 初始化 ZCAN 类型（仅第一次有效）
     _init_zcan(use_real_can)
+
+    # 根据配置选择实际类
     ZCAN = _mock_zcan if not use_real_can else _real_zcan
+
+
 
     try :
         zcanlib = ZCAN()
     except Exception as e:
+        #print("Error initializing ZCAN:", e)
         logger.error("Error initializing ZCAN:", e)
         exit(1)
-        
-    # 如果有窗口对象，设置zcanlib
-    if hasattr(window, 'set_zcanlib'):
+    if window is not None:
         window.set_zcanlib(zcanlib)
 
     if config['USE_REAL_CAN']:
         handle = zcanlib.OpenDevice(ZCAN_USBCANFD_MINI, 0, 0)
         if handle == INVALID_DEVICE_HANDLE:
+            #print("Open Device failed!")
             logger.error("Open Device failed!")
             exit(0)
+        #print(f"device handle: {handle}")
         logger.debug(f"device handle: {handle}")
 
         info = zcanlib.GetDeviceInf(handle)
+        #print(f"Device Info:\n{info}")
         logger.debug(f"Device Info:\n{info}")
 
         chn_handle = can_start(zcanlib, handle, 0)
+        #print(f"channel handle: {chn_handle}")
         logger.debug(f"channel handle: {chn_handle}")
     else:
+        # 使用 MockZCAN 模拟 CAN 设备
         handle = "simulated_device"
         chn_handle = "simulated_channel_0"
         zcanlib.StartCAN(chn_handle)
+        #print("+++++++++++++++++++++++++Running in simulation mode without ZCAN device.++++++++++++++++")
         logger.info("+++++++++++++++++++++++++Running in simulation mode without ZCAN device.++++++++++++++++")
+        # 设置回调
         zcanlib.on_steering_update = lambda a, r, d: update_g_vars(a, r, d)
 
     return zcanlib, chn_handle,handle
 
-def start_main_process(config, window=None):
+def start_main_process(config,window=None):
     global main_thread_list,fRead,fWriteInput,fEnd,ac_api,RC
 
+    # 清空旧线程列表
     main_thread_list.clear()
 
     if config['USE_REAL_AC']:
+
         if config['USE_RC']:
+           # 初始化 DLL 接口
+            # if not ffb_rc.init_game_api():
+            #     exit(1) 
+            # 获取函数引用
             ffb_rc.init_game_api()
             fRead = ffb_rc.get_fRead()
             fEnd = ffb_rc.get_fEnd()
@@ -979,7 +1351,10 @@ def start_main_process(config, window=None):
             RC = True
         else :
             RC= False
+            # dll_path = "C:/Users/tao.yongbiao/Desktop/新建文件夹/g112RC/3_ac_api.dll"
+            #
             ac_api = windll.LoadLibrary(os.path.join(os.path.dirname(__file__), "4_ac_api.dll"))
+            # ac_api = ctypes.WinDLL(dll_path)
 
             ac_api.AC_GetRoll.restype = ctypes.c_float
             ac_api.AC_GetPitch.restype = ctypes.c_float
@@ -993,8 +1368,14 @@ def start_main_process(config, window=None):
                 _fields_ = [("slip" , ctypes.c_float*4)]
             ac_api.AC_GetWheelSlip.restype = WheelSlip
 
+
             class AccG(ctypes.Structure):
                 _fields_ = [("accg", ctypes.c_float * 3)]
+
+            # class AccG(ctypes.Structure):
+            #     _fields_ = [("x", ctypes.c_float),
+            #                 ("y", ctypes.c_float),
+            #                 ("z", ctypes.c_float)]
             ac_api.AC_GetAccG.restype = AccG
 
             class SuspensionTravel(ctypes.Structure):
@@ -1006,19 +1387,25 @@ def start_main_process(config, window=None):
             ac_api.AC_GetLocalAngularVel.restype = LocalAngularVel
 
             if ac_api.AC_StartUpdate() != 0:
+                #print("请先打开神力科莎")
                 logger.error("请先打开神力科莎")
                 exit(1)
     else:
+        #print("Using mock ac_api.")
         logger.info("Using mock ac_api.")
         ac_api = ACAPI()
 
+
+
     if config['USE_WIFI']:
+        # 创建线程
+
         send_broadcast_thread = threading.Thread(target=wifi_module.wifi_send_broadcast_messages)
         sender_heartbeat_thread = threading.Thread(target=wifi_module.wifi_send_heartbeat_messages)
         sender_thread = threading.Thread(target=wifi_module.wifi_send_messages, args=(ac_api,))
         receiver_thread = threading.Thread(target=wifi_module.wifi_receive_messages, )
         heartbeat_monitor_thread = threading.Thread(target=wifi_module.wifi_heartbeat_monitor)
-        
+        #线程状态
         running_threads = [
             receiver_thread,
             send_broadcast_thread,
@@ -1027,38 +1414,69 @@ def start_main_process(config, window=None):
             sender_thread
         ]
     else:
+        # 初始化 CAN
         zcanlib, chn_handle,handle = initialize_can(config, window)
-        
-        # 如果有窗口对象，设置chn_handle
-        if window is not None and hasattr(window, 'chn_handle'):
-            window.chn_handle = chn_handle
-            
+        if window is not None:
+            window.chn_handle = chn_handle  # 将 chn_handle 传递给 GUI
         sender_thread = threading.Thread(target=send_messages, args=(chn_handle, ac_api, zcanlib))
         receiver_thread = threading.Thread(target=receive_messages, args=(chn_handle, zcanlib))
+        #线程状态
         running_threads = [sender_thread, receiver_thread]
         
+  
+
+    #启动所有线程    
     for t in running_threads:
         t.daemon = True
         t.start()
+    
 
+
+    # # 非 GUI 模式下等待线程结束
+    # try:
+    #     for t in running_threads:
+    #         t.join() # 等待线程结束 阻塞主线程顺序等待所有线程依次完成
+    # except KeyboardInterrupt:
+    #     #print("Main process interrupted by user.")
+    #     logger.error("Main process interrupted by user.")
+
+
+        
+    # # 清理资源
+    # if not config['USE_WIFI']:
+    #     zcanlib.ResetCAN(chn_handle)
+    #     zcanlib.CloseDevice(handle)
+
+
+        # 可选：启动一个监控线程来处理清理工作
     def monitor_threads():
         try:
             for t in running_threads:
-                t.join()
+                t.join()  # 在监控线程中阻塞，不影响GUI主线程
         except KeyboardInterrupt:
             logger.error("Main process interrupted by user.")
         finally:
+            # 清理资源
             if not config['USE_WIFI']:
                 zcanlib.ResetCAN(chn_handle)
                 zcanlib.CloseDevice(handle)
     
+    # 启动监控线程（可选）
     monitor_thread = threading.Thread(target=monitor_threads)
     monitor_thread.daemon = True
     monitor_thread.start()
     
+    # 立即返回，不阻塞GUI主线程
     return running_threads
 
+    # sys.exit(app.exec_())
+
+
+
+# 定义事件对象
+# config_ready_event = threading.Event()
 if __name__ == "__main__":
+
     config = {
     'USE_WIFI': False,
     'USE_REAL_CAN': False,
@@ -1067,16 +1485,29 @@ if __name__ == "__main__":
     }
     config_ready_event = threading.Event()
 
+    
+
+
+    # 判断是否不启用 GUI
     no_gui = "--no" in sys.argv or "-n" in sys.argv
     if no_gui:
+        #print("Running without GUI...")
         logger.info("Running without GUI...")
         start_main_process(config)
     else:
+
+
+        
         from PySide6.QtWidgets import QApplication
+        from PySide6.QtCore import QTimer
         from gui import RealTimePlotWindow
         
+
         app = QApplication(sys.argv)
-        window = RealTimePlotWindow(config)
+        window = RealTimePlotWindow(config_ready_event, config=config)
         window.show()
         
+
         sys.exit(app.exec())
+
+    
