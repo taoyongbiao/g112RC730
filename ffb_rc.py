@@ -160,12 +160,12 @@ def read_vehicle_status_from_rc():
     except Exception as e:
         #print(f"[ERROR] Failed to read frame data from RC: {e}")
         logger.error(f"[ERROR] Failed to read frame data from RC: {e}")
-        return None, None, 0.0, None, None, None, None
+        return None, None, 0.0, None, None
 
     if rc_date.running == 0:
         #print("No data available from RC")
         logger.error("No data available from RC")
-        return None, None, 0.0, None, None, None, None
+        return None, None, 0.0, None, None
     #print(f"============speed:{rc_date.speed}\n")
     logger.debug(f"============speed:{rc_date.speed}\n")
     # rc_date.speed=120
@@ -175,7 +175,7 @@ def read_vehicle_status_from_rc():
         rc_date.pitch,
         rc_date.speed,
         rc_date.suspensionData,
-        rc_date.tyreData,
+        rc_date.tyreData
     )
 def calculate_suspension_force_moment(suspension_data, wheel_base=2.5, track_width=1.5):
     """

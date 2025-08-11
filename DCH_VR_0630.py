@@ -7,7 +7,7 @@ import pyvjoy
 import os
 import math
 from ffb_cal_ori import ForceFeedbackAlgorithm
-from ffb_rc import FrameData,FrameInputData,read_vehicle_status_from_rc
+from ffb_rc import FrameData,FrameInputData,read_vehicle_status_from_rc,calculate_lateral_force,calculate_suspension_force_moment
 from MockACAPI import MockACAPI as ACAPI
 from loguru import logger
 import ffb_rc
@@ -697,6 +697,7 @@ def can_start(zcanlib, device_handle, chn):
     return chn_handle
 
 def record_torque_data(**kwargs):
+    global torque_data
     for key, value in kwargs.items():
         if key not in torque_data:
             torque_data[key] = []
@@ -757,7 +758,7 @@ def send_messages(chn_handle, ac_api, zcanlib):
             speed = 0.0
 
             if RC:
-                roll, pitch, speed,suspensionData= read_vehicle_status_from_rc()
+                roll, pitch, speed,suspensionData,tyreData= read_vehicle_status_from_rc()
             else:
                 roll, pitch, speed, wheel_slip, acc_g, suspension_travel, local_angular_vel = read_vehicle_status(ac_api)   
 
@@ -793,13 +794,21 @@ def send_messages(chn_handle, ac_api, zcanlib):
             ffb=ForceFeedbackAlgorithm()
             desired_torque=ffb.get_tanh_torque(speed,G_STEERING_WHEEL_ANGLE)
 
-            lateral_effect = ffb.get_lateral_effect(
-                speed,
-                acc_g,
-                local_angular_vel,
-                wheel_slip.slip
-            )
-            suspension_effect=ffb.get_suspension_effect(speed, suspension_travel)
+            if RC:
+                lateral_effect = 0.0
+                for i in range(4):  # 4个轮胎
+                    lateral_effect += calculate_lateral_force(tyreData[i])
+                
+                suspension_effect = calculate_suspension_force_moment(suspensionData)
+            else :
+
+                lateral_effect = ffb.get_lateral_effect(
+                    speed,
+                    acc_g,
+                    local_angular_vel,
+                    wheel_slip.slip
+                )
+                suspension_effect=ffb.get_suspension_effect(speed, suspension_travel)
 
             friction, damping = ffb.get_friction(ctypes.c_float(G_STEERING_WHEEL_ANGLE),
                                                  ctypes.c_float(G_STEERING_RATE))
