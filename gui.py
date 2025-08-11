@@ -491,7 +491,15 @@ class RealTimePlotWindow(QMainWindow):
         if not display_fields:
             return
         
-        if not hasattr(self, 'bars') or len(display_fields) != len(self.bars):
+        # if not hasattr(self, 'bars') or len(display_fields) != len(self.bars):
+        #     self.ax2.clear()
+
+        need_recreate_bars = (not hasattr(self, 'bars') or 
+                    len(display_fields) != len(self.bars) or
+                    not hasattr(self, 'bar_labels') or
+                    display_fields != getattr(self, 'current_display_fields', []))
+
+        if need_recreate_bars:
             self.ax2.clear()
             
             colors = ['blue', 'green', 'orange', 'purple', 'red', 'brown', 'cyan', 'yellow', 'pink', 'gray']
